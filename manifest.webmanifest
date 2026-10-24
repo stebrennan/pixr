@@ -1,0 +1,14 @@
+{
+  "name": "Pixr",
+  "short_name": "Pixr",
+  "description": "A portable, offline pixel-art and sprite-animation editor.",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#17191e",
+  "theme_color": "#17191e",
+  "icons": [
+    { "src": "assets/pixr-icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "assets/pixr-icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" }
+  ]
+}
