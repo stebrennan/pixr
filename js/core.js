@@ -251,6 +251,12 @@
       this.undoStack.push(clone(current)); const next = this.redoStack.pop(); this.trim(); return next;
     }
   }
+  class DocumentSession {
+    constructor(project, { id = `document-${Date.now()}-${Math.random()}`, saved = true } = {}) {
+      this.id = id; this.project = project; this.history = new History(); this.dirty = !saved;
+      this.scrollLeft = 0; this.scrollTop = 0;
+    }
+  }
   function validateSettings(raw = {}) {
     if (!raw || typeof raw !== 'object' || Array.isArray(raw)) throw new Error('Invalid editor settings.');
     const settings = defaults();
@@ -275,7 +281,7 @@
   const api = { MAX_PIXELS, defaults, dimensions, integer, parseColor, hexColor, normalizeColor,
     blank, createProject, clone, editable, getPixel, setPixel, stamp, linePoints, drawLine, constrain,
     Stroke, flood, fill, flip, over, composite, bitmapPalette, resizeOffset, croppedPixels, resize,
-    addLayer, deleteLayer, mergeDown, addFrame, deleteFrame, frameIndexAfterDeletion, History, validateSettings };
+    addLayer, deleteLayer, mergeDown, addFrame, deleteFrame, frameIndexAfterDeletion, History, DocumentSession, validateSettings };
   root.PixelCore = api;
   if (typeof module !== 'undefined') module.exports = api;
 })(typeof globalThis !== 'undefined' ? globalThis : window);

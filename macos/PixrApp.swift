@@ -74,16 +74,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKScriptMessageHandler
         appItem.submenu = appMenu
         let fileItem = NSMenuItem(); main.addItem(fileItem)
         let fileMenu = NSMenu(title: "File")
+        fileMenu.addItem(withTitle: "New Document…", action: #selector(newDocument), keyEquivalent: "n")
         fileMenu.addItem(withTitle: "Open Pixr File…", action: #selector(openProject), keyEquivalent: "o")
         fileMenu.addItem(withTitle: "Save Pixr File…", action: #selector(saveProject), keyEquivalent: "s")
+        fileMenu.addItem(withTitle: "Close Document", action: #selector(closeDocument), keyEquivalent: "w")
         fileItem.submenu = fileMenu
         NSApp.mainMenu = main
     }
 
-    @objc private func openProject() { chooseFiles(inputId: "project-file", accept: ".pixr,.json,.pixelworkshop,application/json", multiple: false) }
+    @objc private func openProject() { chooseFiles(inputId: "project-file", accept: ".pixr,.json,.pixelworkshop,application/json", multiple: true) }
     @objc private func saveProject() {
         webView.evaluateJavaScript("document.getElementById('save-project').click()")
     }
+    @objc private func newDocument() { webView.evaluateJavaScript("document.getElementById('new').click()") }
+    @objc private func closeDocument() { webView.evaluateJavaScript("document.dispatchEvent(new KeyboardEvent('keydown', {key:'w', metaKey:true, bubbles:true}))") }
 
     func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {
         guard let body = message.body as? [String: Any], let type = body["type"] as? String else { return }
@@ -91,7 +95,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKScriptMessageHandler
         case "open-files":
             chooseFiles(inputId: body["inputId"] as? String ?? "", accept: body["accept"] as? String ?? "", multiple: body["multiple"] as? Bool ?? false)
         case "save-file":
-            saveFile(filename: body["filename"] as? String ?? "Pixr-export", base64: body["base64"] as? String ?? "")
+            saveFile(requestId: body["requestId"] as? String ?? "", filename: body["filename"] as? String ?? "Pixr-export", base64: body["base64"] as? String ?? "")
         default: break
         }
     }
@@ -117,15 +121,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKScriptMessageHandler
         }
     }
 
-    private func saveFile(filename: String, base64: String) {
-        guard let data = Data(base64Encoded: base64) else { return }
+    private func saveFile(requestId: String, filename: String, base64: String) {
+        guard let data = Data(base64Encoded: base64) else { completeSave(requestId, ok: false); return }
         let panel = NSSavePanel(); panel.nameFieldStringValue = filename; panel.canCreateDirectories = true
         if let type = UTType(filenameExtension: URL(fileURLWithPath: filename).pathExtension) { panel.allowedContentTypes = [type] }
-        panel.begin { response in
-            guard response == .OK, let url = panel.url else { return }
-            do { try data.write(to: url, options: .atomic) }
-            catch { NSSound.beep() }
+        panel.begin { [weak self] response in
+            guard response == .OK, let url = panel.url else { self?.completeSave(requestId, ok: false); return }
+            do { try data.write(to: url, options: .atomic); self?.completeSave(requestId, ok: true) }
+            catch { NSSound.beep(); self?.completeSave(requestId, ok: false) }
         }
+    }
+
+    private func completeSave(_ requestId: String, ok: Bool) {
+        guard let id = Self.javascriptString(requestId) else { return }
+        webView.evaluateJavaScript("window.PixrNative.completeSave(\(id), \(ok ? "true" : "false"))")
     }
 
     private static func javascriptString(_ value: String) -> String? {

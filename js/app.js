@@ -3,8 +3,9 @@
   'use strict';
   const C = PixelCore, P = PixelPalettes, F = PixelFiles, PNG = PixelPNG;
   const $ = id => document.getElementById(id);
+  function nativeBridge() { return window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.pixrNative; }
   function requestFiles(input) {
-    const bridge = window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.pixrNative;
+    const bridge = nativeBridge();
     if (bridge) bridge.postMessage({ type: 'open-files', inputId: input.id, accept: input.accept, multiple: input.multiple });
     else input.click();
   }
@@ -20,11 +21,12 @@
     input.dispatchEvent(new Event('change', { bubbles: true }));
   };
   const storageKey = 'pixel-workshop-preferences-v1'; // Retained so existing browser palettes and settings remain available.
+  let documents = [], activeDocument = null, nextUntitled = 1;
   let project = C.createProject(), history = new C.History(), dirty = false, busy = false;
   let stroke = null, beforeStroke = null, previousPoint = null, hover = null;
   let playing = true, previewFrame = 0, previewTime = 0, previewDirty = true;
   let requested = false, timelineDirty = true, bitmapLimit = 128;
-  let resizeMode = false, anchor = 4, pngMode = 'open';
+  let resizeMode = false, anchor = 4, pngMode = 'open', pngTarget = null;
   let storageAvailable = true;
   const temp = document.createElement('canvas'), tempContext = temp.getContext('2d');
   const status = message => { $('status').textContent = message; };
@@ -50,6 +52,35 @@
     const raw = JSON.parse(localStorage.getItem(storageKey) || 'null');
     if (raw) { project.settings = C.validateSettings(raw.settings); project.customPalettes = F.validateCustom(raw.customPalettes); }
   } catch { storageAvailable = false; }
+  function storeActive() { if (activeDocument) Object.assign(activeDocument, { project, history, dirty, scrollLeft: $('stage').scrollLeft, scrollTop: $('stage').scrollTop }); }
+  function activate(doc) {
+    finishStroke(); storeActive(); activeDocument = doc; project = doc.project; history = doc.history; dirty = doc.dirty;
+    playing = false; previewFrame = project.activeFrame; previewTime = 0; previousPoint = null; hover = null; bitmapLimit = 128;
+    $('stage').scrollTo(doc.scrollLeft || 0, doc.scrollTop || 0);
+    document.title = `${dirty ? '• ' : ''}${project.name} — Pixr`;
+    $('play').textContent = '▶ Play'; $('play').setAttribute('aria-pressed', 'false');
+    renderTabs(); renderLibrary(); syncControls(); schedule(true);
+  }
+  function uniqueUntitled() { let name; do { name = `Untitled ${nextUntitled++}`; } while (documents.some(d => d.project.name === name)); return name; }
+  function addDocument(next, saved = false, name = null) {
+    next.name = name || next.name || uniqueUntitled();
+    if (/^Untitled$/.test(next.name)) next.name = uniqueUntitled();
+    const doc = new C.DocumentSession(next, { saved });
+    storeActive(); documents.push(doc); activate(doc); return doc;
+  }
+  function renderTabs() {
+    const bar = $('document-tabs'); if (!bar) return;
+    bar.replaceChildren(...documents.map(doc => {
+      const tab = document.createElement('div'); tab.className = `document-tab${doc === activeDocument ? ' active' : ''}`; tab.setAttribute('role', 'tab'); tab.setAttribute('aria-selected', String(doc === activeDocument)); tab.title = doc.project.name;
+      const select = document.createElement('button'); select.className = 'tab-select'; select.dataset.doc = doc.id; select.textContent = doc.project.name; select.title = doc.project.name;
+      const mark = document.createElement('span'); mark.className = 'tab-dirty'; mark.textContent = doc.dirty ? '●' : ''; mark.title = doc.dirty ? 'Unsaved changes' : '';
+      const close = document.createElement('button'); close.className = 'tab-close'; close.dataset.closeDoc = doc.id; close.textContent = '×'; close.title = `Close ${doc.project.name}`; close.setAttribute('aria-label', close.title);
+      tab.append(select, mark, close); return tab;
+    }));
+    const active = bar.querySelector('.document-tab.active'); if (active) active.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+  }
+  if (!project.name || project.name === 'Untitled') project.name = uniqueUntitled();
+  activeDocument = new C.DocumentSession(project, { id: `doc-${Date.now()}`, saved: true }); history = activeDocument.history; documents.push(activeDocument);
   function palettes() { return P.builtins.concat(project.customPalettes); }
   function selectedPalette() { return palettes().find(p => p.id === project.settings.palette) || P.builtins[0]; }
   function syncPaletteSelect() {
@@ -62,7 +93,7 @@
     $('library-count').textContent = `${selected.colors.length} colours`;
   }
   function setDirty(value = true) {
-    dirty = value; $('dirty').hidden = !value;
+    dirty = value; if (activeDocument) activeDocument.dirty = value; $('dirty').hidden = !value; renderTabs();
     document.title = `${dirty ? '• ' : ''}${project.name} — Pixr`;
   }
   function setting(key, value) {
@@ -103,7 +134,7 @@
     $('zoom').value = s.zoom; $('preview-zoom').value = s.previewZoom;
     $('arrangement').value = s.arrangement; $('fps').value = project.fps;
     $('timeline').hidden = !s.timeline; $('timeline-toggle').setAttribute('aria-expanded', String(s.timeline));
-    $('timeline-toggle').textContent = s.timeline ? 'Timeline ⌄' : 'Timeline ›';
+    $('timeline-toggle').textContent = s.timeline ? 'Frames & Layers ▼' : 'Frames & Layers ▶';
     $('undo').disabled = !history.undoStack.length; $('redo').disabled = !history.redoStack.length;
     $('delete-frame').disabled = project.frames.length === 1; $('delete-layer').disabled = project.layers.length === 1;
     $('merge-layer').disabled = project.activeLayer === 0;
@@ -197,12 +228,9 @@
     if (history.record(before, project)) setDirty();
     previousPoint = null; schedule(true); if (text) status(text);
   }
-  function replaceProject(next, saved = false) {
-    finishStroke(); project = next; history = new C.History(); previousPoint = null; hover = null;
-    previewFrame = project.activeFrame; previewTime = 0; bitmapLimit = 128;
-    renderLibrary(); syncControls(); remember(); setDirty(!saved); schedule(true);
+  function replaceProject(next, saved = false, name = null) {
+    addDocument(next, saved, name); remember(); setDirty(!saved); schedule(true);
   }
-  function discardAllowed() { return !dirty || confirm('This project has unsaved changes. Save it first if you need to keep them. Replace the current project?'); }
   function selectCel(fi, li) {
     finishStroke(); project.activeFrame = fi; project.activeLayer = li; previousPoint = null; bitmapLimit = 128;
     if (!playing) previewFrame = fi; schedule(true);
@@ -295,14 +323,14 @@
       if (cropped && !confirm(`This resize discards ${cropped} non-transparent stored pixels across all frames and layers (including hidden or locked layers). Continue?`)) return;
       mutate(() => C.resize(project, w, h, anchor), `Canvas resized to ${w} × ${h}. Undo restores cropped artwork.`);
     } else {
-      if (!discardAllowed()) return;
-      const next = C.createProject(w, h); next.settings = { ...project.settings }; next.customPalettes = project.customPalettes;
-      replaceProject(next); status(`New transparent ${w} × ${h} canvas.`);
+      const next = C.createProject(w, h); next.settings = { ...project.settings }; next.customPalettes = project.customPalettes; next.name = uniqueUntitled();
+      replaceProject(next, true); status(`New transparent ${w} × ${h} canvas.`);
     }
     $('size-dialog').close(); fit();
   }));
   function on(id, fn, event = 'click') { $(id).addEventListener(event, guard(fn)); }
   on('new', () => openSize(false)); on('resize', () => openSize(true));
+  $('document-tabs').addEventListener('click', guard(event => { const select = event.target.closest('[data-doc]'), close = event.target.closest('[data-close-doc]'); if (select) { const doc = documents.find(d => d.id === select.dataset.doc); if (doc && doc !== activeDocument) activate(doc); } else if (close) closeDocument(close.dataset.closeDoc); }));
   on('help', () => $('help-dialog').showModal());
   document.querySelectorAll('[data-close]').forEach(b => b.addEventListener('click', () => $(b.dataset.close).close()));
   document.querySelectorAll('[data-tool]').forEach(b => b.addEventListener('click', () => { finishStroke(); setting('tool', b.dataset.tool); }));
@@ -389,33 +417,71 @@
     if (error) message(error);
   }
   function checkFile(file, limit) { if (file.size > limit * 1024 * 1024) throw new Error(`${file.name} exceeds ${limit} MiB.`); }
-  on('open-png', () => { pngMode = 'open'; requestFiles($('png-files')); });
-  on('import-frames', () => { pngMode = 'append'; requestFiles($('png-files')); });
+  on('open-png', () => { pngMode = 'open'; pngTarget = null; requestFiles($('png-files')); });
+  on('import-frames', () => { pngMode = 'append'; pngTarget = activeDocument; requestFiles($('png-files')); });
   $('png-files').addEventListener('change', event => {
-    const files = F.naturalOrder(event.target.files), mode = pngMode; event.target.value = ''; if (!files.length) return;
+    const files = F.naturalOrder(event.target.files), mode = pngMode, targetDoc = pngTarget; event.target.value = ''; if (!files.length) return;
     void withBusy(async () => {
       if (files.length > 256) throw new Error('Import at most 256 frames at a time.');
       const images = [];
       for (const file of files) { checkFile(file, 50); images.push({ ...await PNG.decode(await file.arrayBuffer()), name: file.name }); }
       // Build/validate a separate candidate before replacing or mutating the live project.
+      if (mode === 'append' && targetDoc && targetDoc !== activeDocument) activate(targetDoc);
       const next = F.importFrames(C.clone(project), images, mode === 'open');
-      if (mode === 'open') { if (!discardAllowed()) return; replaceProject(next); fit(); }
+      if (mode === 'open') { const name = files.length === 1 ? files[0].name.replace(/\.png$/i, '') : `PNG sequence (${files.length})`; replaceProject(next, true, name); fit(); }
       else mutate(() => { project = next; }, `Imported ${images.length} frame(s) in natural filename order.`);
       status(`Imported ${images.length} PNG frame(s), ${images[0].width} × ${images[0].height}.`);
     });
   });
   on('open-project', () => requestFiles($('project-file')));
   $('project-file').addEventListener('change', event => {
-    const file = event.target.files[0]; event.target.value = ''; if (!file) return;
+    const files = [...event.target.files]; event.target.value = ''; if (!files.length) return;
     void withBusy(async () => {
-      checkFile(file, 64); const next = F.deserialize(await file.text()); if (!discardAllowed()) return;
-      replaceProject(next, true); status(`Opened ${file.name}.`);
+      if (files.length > 128) throw new Error('Open at most 128 Pixr documents at a time.');
+      for (const file of files) {
+        checkFile(file, 64); const next = F.deserialize(await file.text());
+        replaceProject(next, true, file.name.replace(/\.(pixr|json|pixelworkshop)$/i, ''));
+      }
+      status(`Opened ${files.length} Pixr document${files.length === 1 ? '' : 's'}.`);
     });
   });
   function safeName(name) { return name.replace(/[<>:"/\\|?*\x00-\x1f]/g, '-').trim().slice(0, 100) || 'pixr'; }
-  function saveProject() {
-    finishStroke(); F.download(F.serialize(project), `${safeName(project.name)}${F.PROJECT_EXTENSION}`, 'application/json');
-    setDirty(false); status('Project download requested. Keep the downloaded file as your portable backup.');
+  async function saveDocument(doc = activeDocument) {
+    if (!doc) return false;
+    finishStroke(); storeActive();
+    const contents = F.serialize(doc.project), filename = `${safeName(doc.project.name)}${F.PROJECT_EXTENSION}`;
+    try {
+      const ok = await F.download(contents, filename, 'application/json');
+      if (ok) { doc.dirty = false; if (doc === activeDocument) setDirty(false); else renderTabs(); status(`Saved ${doc.project.name}.`); }
+      return !!ok;
+    } catch (e) { message(e); return false; }
+  }
+  function saveProject() { return saveDocument(activeDocument); }
+  async function closeDocument(id) {
+    const doc = documents.find(d => d.id === id); if (!doc) return;
+    if (doc === activeDocument) { finishStroke(); storeActive(); }
+    if (doc.dirty) {
+      const choice = await askClose(doc.project.name);
+      if (choice === 'cancel') return;
+      if (choice === 'save' && !(await saveDocument(doc))) return;
+    }
+    if (doc === activeDocument) finishStroke();
+    const index = documents.indexOf(doc); documents.splice(index, 1);
+    if (!documents.length) { const fresh = C.createProject(); fresh.name = uniqueUntitled(); addDocument(fresh, true); }
+    else if (doc === activeDocument) activate(documents[Math.min(index, documents.length - 1)]);
+    else renderTabs();
+  }
+  function askClose(name) {
+    return new Promise(resolve => {
+      const dialog = $('close-dialog'); $('close-document-name').textContent = name;
+      const done = value => { dialog.close(); dialog.removeEventListener('close', cancelled); resolve(value); };
+      const cancelled = () => resolve('cancel');
+      dialog.addEventListener('close', cancelled, { once: true });
+      dialog.querySelector('[data-choice="save"]').onclick = () => done('save');
+      dialog.querySelector('[data-choice="discard"]').onclick = () => done('discard');
+      dialog.querySelector('[data-choice="cancel"]').onclick = () => done('cancel');
+      dialog.showModal();
+    });
   }
   on('save-project', saveProject);
   function exportImage(sheet) {
@@ -444,7 +510,7 @@
     mutate(() => { project.customPalettes = project.customPalettes.filter(p => p.id !== pal.id); project.settings.palette = 'zx'; }, 'Custom palette deleted.');
     renderLibrary(); remember();
   });
-  window.addEventListener('beforeunload', event => { if (dirty) { event.preventDefault(); event.returnValue = ''; } });
+  window.addEventListener('beforeunload', event => { if (documents.some(doc => doc.dirty)) { event.preventDefault(); event.returnValue = ''; } });
   document.addEventListener('keydown', guard(event => {
     if (document.querySelector('dialog[open]') || /^(INPUT|TEXTAREA|SELECT)$/.test(event.target.tagName) || event.target.isContentEditable) return;
     const key = event.key.toLowerCase(), mod = event.metaKey || event.ctrlKey;
@@ -453,6 +519,9 @@
       if (key === 'z' || key === 'y') undo(event.shiftKey || key === 'y');
       else if (key === 's') saveProject(); else requestFiles($('project-file')); return;
     }
+    if (nativeBridge() && mod && key === 'n') { event.preventDefault(); openSize(false); return; }
+    if (nativeBridge() && mod && key === 'w') { event.preventDefault(); closeDocument(activeDocument.id); return; }
+    if (nativeBridge() && event.ctrlKey && key === 'tab' && documents.length > 1) { event.preventDefault(); const i = documents.indexOf(activeDocument), step = event.shiftKey ? -1 : 1; activate(documents[(i + documents.length + step) % documents.length]); return; }
     if (mod || event.altKey || stroke) return;
     const tools = { b: 'pencil', e: 'eraser', f: 'fill', i: 'picker' };
     if (tools[key]) { event.preventDefault(); setting('tool', tools[key]); }
@@ -466,5 +535,5 @@
     else if (key === 'arrowleft' || key === 'arrowright') { event.preventDefault(); selectCel((project.activeFrame + project.frames.length + (key === 'arrowright' ? 1 : -1)) % project.frames.length, project.activeLayer); }
   }));
   document.addEventListener('click', event => { if (!$('export-menu').contains(event.target)) $('export-menu').open = false; });
-  renderLibrary(); syncControls(); remember(); setDirty(false); schedule(true); requestAnimationFrame(tick);
+  renderTabs(); renderLibrary(); syncControls(); remember(); setDirty(false); schedule(true); requestAnimationFrame(tick);
 })();

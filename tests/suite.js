@@ -187,6 +187,26 @@
     for (const text of ['', '#nope', 'GIMP Palette\n256 0 1 bad', '{broken', '{"colors":[]}']) throws(() => P.parse(text));
     eq(P.parse(JSON.stringify(P.parse('#123\n#456','Palette.hex'))).name, 'Palette');
   });
+  test('Three document sessions keep artwork and undo histories isolated', () => {
+    const docs = [
+      new C.DocumentSession(C.createProject(2, 3), { id: 'knight', saved: true }),
+      new C.DocumentSession(C.createProject(5, 4), { id: 'wizard', saved: false }),
+      new C.DocumentSession(C.createProject(3, 1), { id: 'serf', saved: true }),
+    ];
+    docs.forEach((doc, i) => { doc.project.name = ['Knight', 'Wizard', 'Serf'][i]; });
+    const before = C.clone(docs[1].project);
+    paint(docs[1].project, 4, 3); docs[1].history.record(before, docs[1].project);
+    docs[1].dirty = true;
+    eq(docs.map(d => d.project.name), ['Knight', 'Wizard', 'Serf']);
+    eq(docs.map(d => [d.project.width, d.project.height]), [[2, 3], [5, 4], [3, 1]]);
+    eq(docs.map(d => d.dirty), [false, true, false]);
+    eq(docs.map(d => d.history.undoStack.length), [0, 1, 0]);
+    const restored = docs[1].history.undo(docs[1].project);
+    eq(restored.frames[0].cels[0].some(Boolean), false);
+    eq(docs[0].project.frames[0].cels[0].some(Boolean), false);
+    eq(docs[2].project.frames[0].cels[0].some(Boolean), false);
+  });
+
   test('Versioned projects preserve RGBA, layers, frames, preferences and palettes', () => {
     const p = C.createProject(13, 5, 'Portable'); paint(p, 12, 4, [7,9,201,1]); C.addLayer(p); C.addFrame(p, true);
     p.layers[0].visible = false; p.layers[1].locked = true; p.fps = 23; p.settings.brush = 8;

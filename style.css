@@ -247,6 +247,10 @@ button:focus-visible,input:focus-visible,select:focus-visible,summary:focus-visi
   float:right
 }
 
+.export-menu summary .opened { display:none; }
+.export-menu[open] summary .closed { display:none; }
+.export-menu[open] summary .opened { display:inline; }
+
 .menu {
   position:absolute;
   top:35px;
@@ -1141,3 +1145,49 @@ fieldset p {
   }
 
 }
+
+.document-tabs {
+  display:flex;
+  align-items:stretch;
+  gap:4px;
+  min-height:34px;
+  max-width:100%;
+  overflow-x:auto;
+  overflow-y:hidden;
+  padding:3px 5px 0;
+  border-bottom:1px solid var(--edge);
+  scrollbar-width:thin
+}
+.document-tab {
+  display:flex;
+  align-items:center;
+  gap:5px;
+  flex:0 0 auto;
+  max-width:220px;
+  min-width:84px;
+  padding:0 6px 0 10px;
+  border:1px solid transparent;
+  border-bottom:0;
+  border-radius:5px 5px 0 0;
+  background:#22242c;
+  color:var(--muted)
+}
+.document-tab.active {
+  background:#30323b;
+  color:var(--text);
+  border-color:#424550
+}
+.document-tab button { border:0; background:transparent; padding:5px 2px; }
+.document-tab .tab-select {
+  min-width:0;
+  flex:1;
+  overflow:hidden;
+  text-overflow:ellipsis;
+  white-space:nowrap;
+  text-align:left;
+  color:inherit
+}
+.document-tab .tab-dirty { color:#e8c57a; font-size:9px; }
+.document-tab .tab-close { color:var(--muted); font-size:16px; line-height:1; }
+.document-tab .tab-close:hover { color:var(--text); }
+.close-dialog { max-width:420px; }

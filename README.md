@@ -100,6 +100,29 @@ If both are hidden, their stored artwork is merged and remains hidden. Undo
 restores the separate layers. Exports flatten visible layers without changing
 the editable document. Layer reordering is outside this first release.
 
+## Multiple open documents
+
+Pixr keeps each open document in its own horizontal tab above the canvas. Use
+**New**, **Open PNG**, or **Open Pixr File** to add tabs; opening files leaves
+existing tabs open. Select a tab to switch documents. A dot marks unsaved edits.
+Close a tab with its × button; choose Save, Discard, or Cancel when prompted.
+Closing the final tab creates a new blank document.
+
+**⌘/Ctrl + O / S** opens or saves the active document. In the native macOS app,
+**⌘ + N / W** creates or closes a document, and **Ctrl + Tab** / **Ctrl + Shift
++ Tab** switch tabs. Browser tab shortcuts retain their normal meaning outside
+the native app. Each tab keeps its canvas, frames, layers,
+selection, editor settings, and undo/redo history; switching tabs pauses
+animation playback. Import Frames continues to append to the document that was
+active when the import started.
+
+Browser downloads cannot report whether the user kept or renamed a downloaded
+file, so Pixr clears the modified marker once the download is requested. The
+native app waits for the Save panel and clears it only after a successful write;
+cancelling or failing a native save leaves the document open and modified. Undoing
+back to a previous save point does not yet clear the modified marker automatically;
+save the document to clear it.
+
 ## Import, save and export
 
 **Open PNG** starts a document with dimensions detected from the image. Selecting

@@ -106,12 +106,19 @@
     if (bridge) {
       const bytes = typeof content === 'string' ? new TextEncoder().encode(content) : new Uint8Array(content);
       let binary = ''; for (let i = 0; i < bytes.length; i += 8192) binary += String.fromCharCode(...bytes.subarray(i, i + 8192));
-      bridge.postMessage({ type: 'save-file', filename, mime: type, base64: btoa(binary) });
-      return;
+      const requestId = `save-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+      return new Promise(resolve => {
+        root.PixrNative = root.PixrNative || {};
+        root.PixrNative.pendingSaves = root.PixrNative.pendingSaves || {};
+        root.PixrNative.pendingSaves[requestId] = resolve;
+        root.PixrNative.completeSave = (id, ok) => { const done = root.PixrNative.pendingSaves[id]; if (!done) return; delete root.PixrNative.pendingSaves[id]; done(!!ok); };
+        bridge.postMessage({ type: 'save-file', requestId, filename, mime: type, base64: btoa(binary) });
+      });
     }
     const url = URL.createObjectURL(new Blob([content], { type })), a = document.createElement('a');
     a.href = url; a.download = filename; document.body.append(a); a.click(); a.remove();
     setTimeout(() => URL.revokeObjectURL(url), 30000);
+    return true;
   }
   const api = { FORMAT, VERSION, PROJECT_EXTENSION, serialize, deserialize, validateCustom, naturalOrder, importFrames, spriteSheet, download };
   root.PixelFiles = api; if (typeof module !== 'undefined') module.exports = api;
