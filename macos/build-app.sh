@@ -12,8 +12,16 @@ mkdir -p "$CONTENTS/MacOS" "$RESOURCES/Web" "$ROOT/.build/module-cache"
 swiftc -parse-as-library -O -module-cache-path "$ROOT/.build/module-cache" \
   "$SCRIPT_DIR/generate-icons.swift" -o "$ROOT/.build/generate-icons"
 "$ROOT/.build/generate-icons" "$ROOT/assets/pixr-icon.svg" "$ROOT/assets" "$ROOT/.build/Pixr.iconset"
-rm -f "$ROOT/assets/Pixr.icns"
-iconutil -c icns "$ROOT/.build/Pixr.iconset" -o "$ROOT/assets/Pixr.icns"
+GENERATED_ICNS="$ROOT/.build/Pixr.icns"
+if iconutil -c icns "$ROOT/.build/Pixr.iconset" -o "$GENERATED_ICNS"; then
+  mv "$GENERATED_ICNS" "$ROOT/assets/Pixr.icns"
+elif [ -f "$ROOT/assets/Pixr.icns" ]; then
+  echo "iconutil rejected the generated iconset; keeping the existing Pixr.icns" >&2
+  rm -f "$GENERATED_ICNS"
+else
+  echo "Could not generate Pixr.icns and no existing icon is available" >&2
+  exit 1
+fi
 rm -rf "$ROOT/.build/Pixr.iconset"
 swiftc -parse-as-library -O -module-cache-path "$ROOT/.build/module-cache" -framework AppKit -framework WebKit -framework UniformTypeIdentifiers \
   "$SCRIPT_DIR/PixrApp.swift" -o "$EXECUTABLE"
