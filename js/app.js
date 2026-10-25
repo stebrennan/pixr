@@ -379,6 +379,11 @@
   }, 'change');
   for (const id of ['mirror', 'grid', 'onion', 'checker']) on(id, () => setting(id, $(id).checked), 'change');
   on('background', () => setting('background', $('background').value), 'input');
+  on('reset-backdrop', () => {
+    project.settings.background = C.defaults().background;
+    project.settings.checker = true;
+    remember(); syncControls(); schedule();
+  });
   on('color-picker', () => chooseColor($('color-picker').value + C.parseColor(project.settings.color)[3].toString(16).padStart(2, '0')), 'input');
   on('alpha', () => chooseColor(project.settings.color.slice(0, 7) + Number($('alpha').value).toString(16).padStart(2, '0')), 'input');
   on('hex', () => {

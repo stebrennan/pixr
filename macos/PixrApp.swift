@@ -188,26 +188,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKScriptMessageHandler
         if let sourceDirectory { panel.directoryURL = sourceDirectory }
         panel.isExtensionHidden = false
         if let type = UTType(filenameExtension: URL(fileURLWithPath: filename).pathExtension) { panel.allowedContentTypes = [type] }
-        let suggestedName = sourceDirectory.map { nextAvailableName(filename, in: $0) } ?? filename
-        panel.nameFieldStringValue = URL(fileURLWithPath: suggestedName).deletingPathExtension().lastPathComponent
+        panel.nameFieldStringValue = URL(fileURLWithPath: filename).deletingPathExtension().lastPathComponent
         panel.begin { [weak self] response in
             guard response == .OK, let url = panel.url else { self?.completeSave(requestId, ok: false); return }
             do { try data.write(to: url, options: .atomic); self?.completeSave(requestId, ok: true, path: url.path) }
             catch { NSSound.beep(); self?.completeSave(requestId, ok: false) }
-        }
-    }
-
-    private func nextAvailableName(_ filename: String, in directory: URL) -> String {
-        let original = directory.appendingPathComponent(filename)
-        guard FileManager.default.fileExists(atPath: original.path) else { return filename }
-        let source = URL(fileURLWithPath: filename)
-        let stem = source.deletingPathExtension().lastPathComponent
-        let ext = source.pathExtension
-        var index = 2
-        while true {
-            let candidate = ext.isEmpty ? "\(stem) \(index)" : "\(stem) \(index).\(ext)"
-            if !FileManager.default.fileExists(atPath: directory.appendingPathComponent(candidate).path) { return candidate }
-            index += 1
         }
     }
 

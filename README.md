@@ -62,7 +62,8 @@ uses Swift, AppKit, WebKit, `iconutil` and `codesign` from macOS developer tools
 - **Zoom / Fit:** integer nearest-neighbour display zoom from 1× to 48×. Large
   canvases scroll; Fit selects the largest fitting integer zoom, with a 1× minimum.
 - **Grid / backdrop:** grid lines are displayed at zoom 4× and above. Choose a
-  solid colour or checkerboard for transparency. Display backgrounds, grid,
+  solid backdrop colour, or enable **Checkers** to view transparency. **Default**
+  restores Pixr's standard checkerboard backdrop. Display backgrounds, grid,
   brush outlines and onion skinning never become exported pixels.
 
 **Resize canvas** changes every cel's boundaries without scaling pixels. Select
