@@ -90,8 +90,9 @@ layer. **Delete Frame** removes the selected frame and all of its cels. It selec
 the next frame, or the previous frame when deleting the last one; the final frame
 cannot be deleted. Undo and redo restore the complete frame. Preview playback
 loops independently of the selected editing frame, at 1–60 FPS, with its own
-1×–16× zoom. Pause shows the selected frame. Onion skinning
-shows the preceding frame at 25% opacity, wrapping at the start of the animation.
+1×–16× zoom. Pause shows the selected frame. Onion skinning overlays the
+preceding frame in translucent blue so it remains visible over opaque pixels;
+at the first frame it wraps around to the last frame.
 
 **Merge Down** combines the selected layer and the layer beneath it across every
 frame, using source-over alpha. Unlock both first. If one is hidden, confirmation
@@ -103,8 +104,11 @@ the editable document. Layer reordering is outside this first release.
 ## Multiple open documents
 
 Pixr keeps each open document in its own horizontal tab above the canvas. Use
-**New**, **Open PNG**, or **Open Pixr File** to add tabs; opening files leaves
-existing tabs open. Select a tab to switch documents. A dot marks unsaved edits.
+**New** or **Open** to add tabs; opening files leaves
+existing tabs open. You can also drop PNG images or Pixr/legacy JSON files from
+Finder or the desktop onto Pixr. Multiple PNGs open as one animation, while
+multiple project files open as separate tabs. Drag tabs horizontally to reorder
+them. Select a tab to switch documents. A dot marks unsaved edits.
 Close a tab with its × button; choose Save, Discard, or Cancel when prompted.
 Closing the final tab creates a new blank document.
 
@@ -113,8 +117,7 @@ Closing the final tab creates a new blank document.
 + Tab** switch tabs. Browser tab shortcuts retain their normal meaning outside
 the native app. Each tab keeps its canvas, frames, layers,
 selection, editor settings, and undo/redo history; switching tabs pauses
-animation playback. Import Frames continues to append to the document that was
-active when the import started.
+animation playback.
 
 Browser downloads cannot report whether the user kept or renamed a downloaded
 file, so Pixr clears the modified marker once the download is requested. The
@@ -125,11 +128,10 @@ save the document to clear it.
 
 ## Import, save and export
 
-**Open PNG** starts a document with dimensions detected from the image. Selecting
+**Open** accepts PNG images and Pixr/legacy project files. PNG images start a
+document with dimensions detected from the image. Selecting
 multiple files creates animation frames in natural filename order (`walk2`
-before `walk10`). All dimensions must match. **Import frames** inserts after the
-selected frame on the active layer; other layers in those frames are transparent.
-These images must match the existing canvas. A failed import preserves the
+before `walk10`). All dimensions must match. A failed import preserves the
 current document and imports none of the files.
 
 PNG import supports grayscale, RGB, indexed and RGBA images, all standard PNG
@@ -139,7 +141,16 @@ filters, packed grayscale/index values, tRNS transparency and Adam7 interlacing.
 colour-management metadata are not applied or retained. APNG is rejected; use
 separate PNG frame files. No colour quantisation is performed.
 
-**Save Pixr File** saves an editable `.pixr` document. **Open Pixr File** validates
+**Save** saves an editable `.pixr` document. In the native app it writes to the
+current file after the first save; **Save As** chooses a new path. For a frame
+imported from an original PNG, **Current frame** suggests that frame's original filename
+and folder in the native macOS app. If that filename exists, Pixr suggests the
+next available numbered name (for example, `serf_left_01 2.png`); edit the name
+back to the original to replace it after the normal overwrite confirmation.
+Browsers can suggest the original filename, but their download handling controls
+the destination folder and duplicate-name suffixes. Pixr files retain frame names
+but do not store local source paths, so folder suggestions are available only in
+the session where the PNGs were opened. **Open** validates
 the entire file before replacing your work. Pixr files contain JSON using the
 existing versioned project format, and retain dimensions, all cels, hidden pixels,
 layer properties, frames, FPS, custom palettes, active selection and editor

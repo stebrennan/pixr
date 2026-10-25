@@ -4,6 +4,7 @@
   const C = PixelCore, P = PixelPalettes, F = PixelFiles, PNG = PixelPNG;
   const $ = id => document.getElementById(id);
   function nativeBridge() { return window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.pixrNative; }
+  if (nativeBridge()) document.body.classList.add('native-app');
   function requestFiles(input) {
     const bridge = nativeBridge();
     if (bridge) bridge.postMessage({ type: 'open-files', inputId: input.id, accept: input.accept, multiple: input.multiple });
@@ -17,18 +18,18 @@
       for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
       transfer.items.add(new File([bytes], item.name, { type: item.type || 'application/octet-stream' }));
     }
+    input.__pixrSourcePaths = files.map(item => item.sourcePath || null);
     input.files = transfer.files;
     input.dispatchEvent(new Event('change', { bubbles: true }));
   };
   const storageKey = 'pixel-workshop-preferences-v1'; // Retained so existing browser palettes and settings remain available.
-  let documents = [], activeDocument = null, nextUntitled = 1;
+  let documents = [], activeDocument = null, nextUntitled = 1, draggedTabId = null;
   let project = C.createProject(), history = new C.History(), dirty = false, busy = false;
   let stroke = null, beforeStroke = null, previousPoint = null, hover = null;
   let playing = true, previewFrame = 0, previewTime = 0, previewDirty = true;
   let requested = false, timelineDirty = true, bitmapLimit = 128;
   let resizeMode = false, anchor = 4, pngMode = 'open', pngTarget = null;
   let storageAvailable = true;
-  const temp = document.createElement('canvas'), tempContext = temp.getContext('2d');
   const status = message => { $('status').textContent = message; };
   function message(error, title = 'Could not complete that action') {
     $('message-title').textContent = title; $('message-text').textContent = error.message || String(error);
@@ -50,7 +51,7 @@
   }
   try {
     const raw = JSON.parse(localStorage.getItem(storageKey) || 'null');
-    if (raw) { project.settings = C.validateSettings(raw.settings); project.customPalettes = F.validateCustom(raw.customPalettes); }
+    if (raw) { project.settings = C.validateSettings(raw.settings); project.settings.onion = false; project.customPalettes = F.validateCustom(raw.customPalettes); }
   } catch { storageAvailable = false; }
   function storeActive() { if (activeDocument) Object.assign(activeDocument, { project, history, dirty, scrollLeft: $('stage').scrollLeft, scrollTop: $('stage').scrollTop }); }
   function activate(doc) {
@@ -71,7 +72,7 @@
   function renderTabs() {
     const bar = $('document-tabs'); if (!bar) return;
     bar.replaceChildren(...documents.map(doc => {
-      const tab = document.createElement('div'); tab.className = `document-tab${doc === activeDocument ? ' active' : ''}`; tab.setAttribute('role', 'tab'); tab.setAttribute('aria-selected', String(doc === activeDocument)); tab.title = doc.project.name;
+      const tab = document.createElement('div'); tab.className = `document-tab${doc === activeDocument ? ' active' : ''}`; tab.draggable = true; tab.dataset.tabId = doc.id; tab.setAttribute('role', 'tab'); tab.setAttribute('aria-selected', String(doc === activeDocument)); tab.title = doc.project.name;
       const select = document.createElement('button'); select.className = 'tab-select'; select.dataset.doc = doc.id; select.textContent = doc.project.name; select.title = doc.project.name;
       const mark = document.createElement('span'); mark.className = 'tab-dirty'; mark.textContent = doc.dirty ? '●' : ''; mark.title = doc.dirty ? 'Unsaved changes' : '';
       const close = document.createElement('button'); close.className = 'tab-close'; close.dataset.closeDoc = doc.id; close.textContent = '×'; close.title = `Close ${doc.project.name}`; close.setAttribute('aria-label', close.title);
@@ -126,7 +127,7 @@
     const s = project.settings, color = C.parseColor(s.color);
     document.querySelectorAll('[data-tool]').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.tool === s.tool)));
     for (const key of ['mirror', 'grid', 'onion', 'checker']) $(key).checked = s[key];
-    $('brush').value = s.brush; $('brush-value').textContent = `${s.brush} px`;
+    $('brush').value = s.brush; $('brush-number').value = s.brush;
     $('brush-sample').style.width = `${s.brush * 3}px`; $('brush-sample').style.height = `${s.brush * 3}px`;
     $('background').value = s.background; $('color-picker').value = s.color.slice(0, 7); $('hex').value = s.color;
     $('alpha').value = color[3]; $('color-alpha').textContent = `${Math.round(color[3] / 255 * 100)}%`;
@@ -158,17 +159,31 @@
     renderCursor();
   }
   function put(canvas, data, w = project.width, h = project.height) {
-    if (canvas.width !== w) canvas.width = w; if (canvas.height !== h) canvas.height = h;
+    if (canvas.width !== w) canvas.width = w;
+    if (canvas.height !== h) canvas.height = h;
     canvas.getContext('2d').putImageData(new ImageData(data, w, h), 0, 0);
   }
   function renderArt() {
     const canvas = $('art'); canvas.width = project.width; canvas.height = project.height;
     const ctx = canvas.getContext('2d');
+    const current = C.composite(project);
+    let pixels = current;
     if (project.settings.onion && project.frames.length > 1) {
-      put(temp, C.composite(project, (project.activeFrame + project.frames.length - 1) % project.frames.length));
-      ctx.globalAlpha = .25; ctx.drawImage(temp, 0, 0); ctx.globalAlpha = 1;
+      const previous = C.composite(project, (project.activeFrame + project.frames.length - 1) % project.frames.length);
+      pixels = new Uint8ClampedArray(current);
+      for (let i = 0; i < previous.length; i += 4) {
+        const sourceAlpha = previous[i + 3] / 255 * .35;
+        if (!sourceAlpha) continue;
+        const destinationAlpha = current[i + 3] / 255;
+        const outputAlpha = sourceAlpha + destinationAlpha * (1 - sourceAlpha);
+        const destinationWeight = destinationAlpha * (1 - sourceAlpha);
+        pixels[i] = (96 * sourceAlpha + current[i] * destinationWeight) / outputAlpha;
+        pixels[i + 1] = (190 * sourceAlpha + current[i + 1] * destinationWeight) / outputAlpha;
+        pixels[i + 2] = (255 * sourceAlpha + current[i + 2] * destinationWeight) / outputAlpha;
+        pixels[i + 3] = outputAlpha * 255;
+      }
     }
-    put(temp, C.composite(project)); ctx.drawImage(temp, 0, 0);
+    ctx.putImageData(new ImageData(pixels, project.width, project.height), 0, 0);
   }
   function thumbnail(canvas, data) {
     if (canvas.width !== project.width) canvas.width = project.width;
@@ -229,7 +244,7 @@
     previousPoint = null; schedule(true); if (text) status(text);
   }
   function replaceProject(next, saved = false, name = null) {
-    addDocument(next, saved, name); remember(); setDirty(!saved); schedule(true);
+    const doc = addDocument(next, saved, name); remember(); setDirty(!saved); schedule(true); return doc;
   }
   function selectCel(fi, li) {
     finishStroke(); project.activeFrame = fi; project.activeLayer = li; previousPoint = null; bitmapLimit = 128;
@@ -323,7 +338,7 @@
       if (cropped && !confirm(`This resize discards ${cropped} non-transparent stored pixels across all frames and layers (including hidden or locked layers). Continue?`)) return;
       mutate(() => C.resize(project, w, h, anchor), `Canvas resized to ${w} × ${h}. Undo restores cropped artwork.`);
     } else {
-      const next = C.createProject(w, h); next.settings = { ...project.settings }; next.customPalettes = project.customPalettes; next.name = uniqueUntitled();
+      const next = C.createProject(w, h); next.settings = { ...project.settings, onion: false }; next.customPalettes = project.customPalettes; next.name = uniqueUntitled();
       replaceProject(next, true); status(`New transparent ${w} × ${h} canvas.`);
     }
     $('size-dialog').close(); fit();
@@ -331,10 +346,37 @@
   function on(id, fn, event = 'click') { $(id).addEventListener(event, guard(fn)); }
   on('new', () => openSize(false)); on('resize', () => openSize(true));
   $('document-tabs').addEventListener('click', guard(event => { const select = event.target.closest('[data-doc]'), close = event.target.closest('[data-close-doc]'); if (select) { const doc = documents.find(d => d.id === select.dataset.doc); if (doc && doc !== activeDocument) activate(doc); } else if (close) closeDocument(close.dataset.closeDoc); }));
+  $('document-tabs').addEventListener('dragstart', event => {
+    const tab = event.target.closest('[data-tab-id]'); if (!tab) return;
+    draggedTabId = tab.dataset.tabId; event.dataTransfer.effectAllowed = 'move';
+    event.dataTransfer.setData('text/plain', draggedTabId); tab.classList.add('dragging');
+  });
+  $('document-tabs').addEventListener('dragover', event => {
+    const tab = event.target.closest('[data-tab-id]'); if (!draggedTabId || !tab || tab.dataset.tabId === draggedTabId) return;
+    event.preventDefault(); event.dataTransfer.dropEffect = 'move';
+    const after = event.clientX > tab.getBoundingClientRect().left + tab.getBoundingClientRect().width / 2;
+    document.querySelectorAll('.document-tab.drop-before,.document-tab.drop-after').forEach(el => el.classList.remove('drop-before','drop-after'));
+    tab.classList.add(after ? 'drop-after' : 'drop-before');
+  });
+  $('document-tabs').addEventListener('drop', event => {
+    const tab = event.target.closest('[data-tab-id]'); if (!draggedTabId || !tab) return;
+    event.preventDefault();
+    const rect = tab.getBoundingClientRect(), after = event.clientX > rect.left + rect.width / 2;
+    documents = C.reorderDocuments(documents, draggedTabId, tab.dataset.tabId, after); draggedTabId = null;
+    renderTabs();
+  });
+  $('document-tabs').addEventListener('dragend', () => {
+    draggedTabId = null; document.querySelectorAll('.document-tab.dragging,.document-tab.drop-before,.document-tab.drop-after').forEach(el => el.classList.remove('dragging','drop-before','drop-after'));
+  });
   on('help', () => $('help-dialog').showModal());
   document.querySelectorAll('[data-close]').forEach(b => b.addEventListener('click', () => $(b.dataset.close).close()));
   document.querySelectorAll('[data-tool]').forEach(b => b.addEventListener('click', () => { finishStroke(); setting('tool', b.dataset.tool); }));
   on('brush', () => setting('brush', Number($('brush').value)), 'input');
+  on('brush-number', () => {
+    const field = $('brush-number'), value = Number(field.value);
+    if (!field.value || !Number.isFinite(value)) { field.value = project.settings.brush; return; }
+    setting('brush', Math.max(1, Math.min(8, Math.round(value))));
+  }, 'change');
   for (const id of ['mirror', 'grid', 'onion', 'checker']) on(id, () => setting(id, $(id).checked), 'change');
   on('background', () => setting('background', $('background').value), 'input');
   on('color-picker', () => chooseColor($('color-picker').value + C.parseColor(project.settings.color)[3].toString(16).padStart(2, '0')), 'input');
@@ -417,46 +459,85 @@
     if (error) message(error);
   }
   function checkFile(file, limit) { if (file.size > limit * 1024 * 1024) throw new Error(`${file.name} exceeds ${limit} MiB.`); }
-  on('open-png', () => { pngMode = 'open'; pngTarget = null; requestFiles($('png-files')); });
-  on('import-frames', () => { pngMode = 'append'; pngTarget = activeDocument; requestFiles($('png-files')); });
-  $('png-files').addEventListener('change', event => {
-    const files = F.naturalOrder(event.target.files), mode = pngMode, targetDoc = pngTarget; event.target.value = ''; if (!files.length) return;
+  async function openPNGFiles(inputFiles, mode = 'open', targetDoc = null, sourcePaths = []) {
+    const files = F.naturalOrder([...inputFiles].map((file, index) => ({ file, name: file.name, sourcePath: sourcePaths[index] || null })));
+    if (!files.length) return;
+    if (files.length > 256) throw new Error('Import at most 256 frames at a time.');
+    const images = [];
+    for (const item of files) {
+      checkFile(item.file, 50);
+      images.push({ ...await PNG.decode(await item.file.arrayBuffer()), name: item.name, sourceName: item.name, sourcePath: item.sourcePath });
+    }
+    const target = targetDoc && documents.includes(targetDoc) ? targetDoc : activeDocument;
+    if (mode === 'append' && target && target !== activeDocument) activate(target);
+    const next = F.importFrames(C.clone(project), images, mode === 'open');
+    if (mode === 'open') {
+      next.settings.onion = false;
+      const name = files.length === 1 ? files[0].name.replace(/\.png$/i, '') : `${files[0].name.replace(/\.png$/i, '')}-seq`;
+      replaceProject(next, true, name); fit();
+    } else mutate(() => { project = next; }, `Imported ${images.length} frame(s) in natural filename order.`);
+    status(`Imported ${images.length} PNG frame(s), ${images[0].width} × ${images[0].height}.`);
+  }
+  async function openProjectFiles(inputFiles, sourcePaths = []) {
+    const files = [...inputFiles]; if (!files.length) return;
+    if (files.length > 128) throw new Error('Open at most 128 Pixr documents at a time.');
+    for (const [index, file] of files.entries()) {
+      checkFile(file, 64); const next = F.deserialize(await file.text());
+      const doc = replaceProject(next, true, file.name.replace(/\.(pixr|json|pixelworkshop)$/i, ''));
+      doc.filePath = sourcePaths[index] || null;
+    }
+    status(`Opened ${files.length} Pixr document${files.length === 1 ? '' : 's'}.`);
+  }
+  on('open-files', () => requestFiles($('open-files-input')));
+  $('open-files-input').addEventListener('change', event => {
+    const files = [...event.target.files], sourcePaths = event.target.__pixrSourcePaths || [];
+    event.target.value = ''; event.target.__pixrSourcePaths = []; if (!files.length) return;
+    const pngs = files.filter(file => /\.png$/i.test(file.name) || file.type === 'image/png');
+    const projects = files.filter(file => /\.(pixr|json|pixelworkshop)$/i.test(file.name) && !pngs.includes(file));
     void withBusy(async () => {
-      if (files.length > 256) throw new Error('Import at most 256 frames at a time.');
-      const images = [];
-      for (const file of files) { checkFile(file, 50); images.push({ ...await PNG.decode(await file.arrayBuffer()), name: file.name }); }
-      // Build/validate a separate candidate before replacing or mutating the live project.
-      if (mode === 'append' && targetDoc && targetDoc !== activeDocument) activate(targetDoc);
-      const next = F.importFrames(C.clone(project), images, mode === 'open');
-      if (mode === 'open') { const name = files.length === 1 ? files[0].name.replace(/\.png$/i, '') : `PNG sequence (${files.length})`; replaceProject(next, true, name); fit(); }
-      else mutate(() => { project = next; }, `Imported ${images.length} frame(s) in natural filename order.`);
-      status(`Imported ${images.length} PNG frame(s), ${images[0].width} × ${images[0].height}.`);
+      if (pngs.length + projects.length !== files.length) throw new Error('Open PNG images or Pixr project files.');
+      if (pngs.length) await openPNGFiles(pngs, 'open', null, pngs.map(file => sourcePaths[files.indexOf(file)]));
+      if (projects.length) await openProjectFiles(projects, projects.map(file => sourcePaths[files.indexOf(file)]));
     });
   });
-  on('open-project', () => requestFiles($('project-file')));
-  $('project-file').addEventListener('change', event => {
-    const files = [...event.target.files]; event.target.value = ''; if (!files.length) return;
+  function hasFiles(event) { return [...(event.dataTransfer?.types || [])].includes('Files'); }
+  document.addEventListener('dragenter', event => {
+    if (hasFiles(event)) { event.preventDefault(); document.body.classList.add('file-drop'); }
+  });
+  document.addEventListener('dragover', event => {
+    if (hasFiles(event)) { event.preventDefault(); if (event.dataTransfer) event.dataTransfer.dropEffect = 'copy'; }
+  });
+  document.addEventListener('dragleave', event => {
+    if (hasFiles(event) && (!event.relatedTarget || !document.documentElement.contains(event.relatedTarget))) document.body.classList.remove('file-drop');
+  });
+  document.addEventListener('drop', event => {
+    document.body.classList.remove('file-drop');
+    if (!hasFiles(event)) return;
+    event.preventDefault();
+    const dropped = [...event.dataTransfer.files], pngs = dropped.filter(file => /\.png$/i.test(file.name) || file.type === 'image/png');
+    const projects = dropped.filter(file => /\.(pixr|json|pixelworkshop)$/i.test(file.name) && !pngs.includes(file));
+    const unsupported = dropped.filter(file => !pngs.includes(file) && !projects.includes(file));
+    if (!pngs.length && !projects.length) { message(new Error('Drop PNG images or Pixr project files to open them.')); return; }
     void withBusy(async () => {
-      if (files.length > 128) throw new Error('Open at most 128 Pixr documents at a time.');
-      for (const file of files) {
-        checkFile(file, 64); const next = F.deserialize(await file.text());
-        replaceProject(next, true, file.name.replace(/\.(pixr|json|pixelworkshop)$/i, ''));
-      }
-      status(`Opened ${files.length} Pixr document${files.length === 1 ? '' : 's'}.`);
+      if (unsupported.length) throw new Error(`Unsupported dropped file: ${unsupported[0].name}. Drop PNG images or Pixr project files.`);
+      if (pngs.length) await openPNGFiles(pngs, 'open');
+      if (projects.length) await openProjectFiles(projects);
     });
   });
   function safeName(name) { return name.replace(/[<>:"/\\|?*\x00-\x1f]/g, '-').trim().slice(0, 100) || 'pixr'; }
-  async function saveDocument(doc = activeDocument) {
+  async function saveDocument(doc = activeDocument, saveAs = false) {
     if (!doc) return false;
     finishStroke(); storeActive();
     const contents = F.serialize(doc.project), filename = `${safeName(doc.project.name)}${F.PROJECT_EXTENSION}`;
     try {
-      const ok = await F.download(contents, filename, 'application/json');
-      if (ok) { doc.dirty = false; if (doc === activeDocument) setDirty(false); else renderTabs(); status(`Saved ${doc.project.name}.`); }
+      const result = await F.download(contents, filename, 'application/json', { savePath: saveAs ? '' : (doc.filePath || ''), saveAs });
+      const ok = typeof result === 'object' ? result.ok : result;
+      if (ok) { if (typeof result === 'object' && result.path) doc.filePath = result.path; doc.dirty = false; if (doc === activeDocument) setDirty(false); else renderTabs(); status(`Saved ${doc.project.name}.`); }
       return !!ok;
     } catch (e) { message(e); return false; }
   }
   function saveProject() { return saveDocument(activeDocument); }
+  function saveProjectAs() { return saveDocument(activeDocument, true); }
   async function closeDocument(id) {
     const doc = documents.find(d => d.id === id); if (!doc) return;
     if (doc === activeDocument) { finishStroke(); storeActive(); }
@@ -483,10 +564,15 @@
       dialog.showModal();
     });
   }
-  on('save-project', saveProject);
+  on('save-project', saveProject); on('save-as', saveProjectAs);
   function exportImage(sheet) {
     finishStroke(); const img = sheet ? F.spriteSheet(project) : { width: project.width, height: project.height, data: C.composite(project) };
-    F.download(PNG.encode(img.width, img.height, img.data), `${safeName(project.name)}-${sheet ? 'sheet' : 'frame-' + (project.activeFrame + 1)}.png`, 'image/png');
+    const frame = sheet ? null : project.frames[project.activeFrame];
+    const originalPNGName = frame?.sourceName || (/\.png$/i.test(frame?.name || '') ? frame.name : null);
+    const filename = safeName(originalPNGName || `${safeName(project.name)}-${sheet ? 'sheet' : 'frame-' + (project.activeFrame + 1)}.png`);
+    const sourcePath = frame?.sourcePath || '';
+    const directory = sourcePath.includes('/') ? sourcePath.slice(0, sourcePath.lastIndexOf('/')) : '';
+    F.download(PNG.encode(img.width, img.height, img.data), filename, 'image/png', { directory });
     $('export-menu').open = false; status(`Exported ${img.width} × ${img.height} transparent PNG. Editing layers are intact.`);
   }
   on('export-png', () => exportImage(false)); on('export-sheet', () => exportImage(true));
@@ -517,7 +603,7 @@
     if (mod && ['z', 'y', 's', 'o'].includes(key)) {
       event.preventDefault();
       if (key === 'z' || key === 'y') undo(event.shiftKey || key === 'y');
-      else if (key === 's') saveProject(); else requestFiles($('project-file')); return;
+      else if (key === 's') saveProject(); else requestFiles($('open-files-input')); return;
     }
     if (nativeBridge() && mod && key === 'n') { event.preventDefault(); openSize(false); return; }
     if (nativeBridge() && mod && key === 'w') { event.preventDefault(); closeDocument(activeDocument.id); return; }

@@ -187,6 +187,14 @@
     for (const text of ['', '#nope', 'GIMP Palette\n256 0 1 bad', '{broken', '{"colors":[]}']) throws(() => P.parse(text));
     eq(P.parse(JSON.stringify(P.parse('#123\n#456','Palette.hex'))).name, 'Palette');
   });
+  test('Document tabs reorder without changing document identities', () => {
+    const docs = ['Knight', 'Wizard', 'Serf'].map((name, i) => ({ id: name.toLowerCase(), name, index: i }));
+    eq(C.reorderDocuments(docs, 'serf', 'knight').map(d => d.name), ['Serf', 'Knight', 'Wizard']);
+    eq(C.reorderDocuments(docs, 'knight', 'wizard', true).map(d => d.name), ['Wizard', 'Knight', 'Serf']);
+    eq(C.reorderDocuments(docs, 'unknown', 'wizard').map(d => d.id), ['knight', 'wizard', 'serf']);
+    eq(docs.map(d => d.index), [0, 1, 2]);
+  });
+
   test('Three document sessions keep artwork and undo histories isolated', () => {
     const docs = [
       new C.DocumentSession(C.createProject(2, 3), { id: 'knight', saved: true }),
@@ -232,8 +240,14 @@
   test('Natural import order, rectangular frame matching, atomic rejection', () => {
     eq(F.naturalOrder([{name:'walk10.png'},{name:'walk2.png'},{name:'walk1.png'}]).map(f=>f.name),['walk1.png','walk2.png','walk10.png']);
     const p = C.createProject(3, 2), data = C.blank(3,2); data.set(red);
-    const imgs = [{width:3,height:2,data,name:'frame1.png'}, {width:3,height:2,data,name:'frame2.png'}];
-    F.importFrames(p,imgs); eq(p.frames.length,3); p.frames[1].cels[0][0]=12; eq(p.frames[2].cels[0][0],255);
+    const imgs = [
+      {width:3,height:2,data,name:'frame1.png',sourceName:'frame1.png',sourcePath:'/sprites/frame1.png'},
+      {width:3,height:2,data,name:'frame2.png',sourceName:'frame2.png',sourcePath:'/sprites/frame2.png'},
+    ];
+    F.importFrames(p,imgs); eq(p.frames.length,3); eq(p.frames[1].sourcePath,'/sprites/frame1.png');
+    eq(C.clone(p).frames[2].sourceName,'frame2.png');
+    eq(F.serialize(p).includes('/sprites/frame1.png'),false);
+    p.frames[1].cels[0][0]=12; eq(p.frames[2].cels[0][0],255);
     const before=F.serialize(p); throws(()=>F.importFrames(p,[imgs[0],{...imgs[1],width:2}]), /expected/); eq(F.serialize(p),before);
     const next=F.importFrames(p,[{width:1,height:6,data:C.blank(1,6)}],true); eq([next.width,next.height],[1,6]);
   });

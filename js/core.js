@@ -251,6 +251,15 @@
       this.undoStack.push(clone(current)); const next = this.redoStack.pop(); this.trim(); return next;
     }
   }
+  function reorderDocuments(items, draggedId, targetId, after = false) {
+    const result = [...items], from = result.findIndex(item => item.id === draggedId);
+    const target = result.findIndex(item => item.id === targetId);
+    if (from < 0 || target < 0 || from === target) return result;
+    const [item] = result.splice(from, 1);
+    const targetAfterRemoval = result.findIndex(entry => entry.id === targetId);
+    result.splice(targetAfterRemoval + (after ? 1 : 0), 0, item);
+    return result;
+  }
   class DocumentSession {
     constructor(project, { id = `document-${Date.now()}-${Math.random()}`, saved = true } = {}) {
       this.id = id; this.project = project; this.history = new History(); this.dirty = !saved;
@@ -281,7 +290,7 @@
   const api = { MAX_PIXELS, defaults, dimensions, integer, parseColor, hexColor, normalizeColor,
     blank, createProject, clone, editable, getPixel, setPixel, stamp, linePoints, drawLine, constrain,
     Stroke, flood, fill, flip, over, composite, bitmapPalette, resizeOffset, croppedPixels, resize,
-    addLayer, deleteLayer, mergeDown, addFrame, deleteFrame, frameIndexAfterDeletion, History, DocumentSession, validateSettings };
+    addLayer, deleteLayer, mergeDown, addFrame, deleteFrame, frameIndexAfterDeletion, History, DocumentSession, reorderDocuments, validateSettings };
   root.PixelCore = api;
   if (typeof module !== 'undefined') module.exports = api;
 })(typeof globalThis !== 'undefined' ? globalThis : window);

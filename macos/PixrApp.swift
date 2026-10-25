@@ -6,6 +6,8 @@ import UniformTypeIdentifiers
 final class AppDelegate: NSObject, NSApplicationDelegate, WKScriptMessageHandler, WKUIDelegate, NSWindowDelegate {
     private var window: NSWindow!
     private var webView: WKWebView!
+    private var recentMenu: NSMenu!
+    private let recentKey = "PixrRecentFiles"
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.regular)
@@ -74,20 +76,67 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKScriptMessageHandler
         appItem.submenu = appMenu
         let fileItem = NSMenuItem(); main.addItem(fileItem)
         let fileMenu = NSMenu(title: "File")
-        fileMenu.addItem(withTitle: "New Document…", action: #selector(newDocument), keyEquivalent: "n")
-        fileMenu.addItem(withTitle: "Open Pixr File…", action: #selector(openProject), keyEquivalent: "o")
-        fileMenu.addItem(withTitle: "Save Pixr File…", action: #selector(saveProject), keyEquivalent: "s")
-        fileMenu.addItem(withTitle: "Close Document", action: #selector(closeDocument), keyEquivalent: "w")
+        fileMenu.addItem(withTitle: "New", action: #selector(newDocument), keyEquivalent: "n")
+        fileMenu.addItem(withTitle: "Open", action: #selector(openFiles), keyEquivalent: "o")
+        let recentItem = NSMenuItem(title: "Open Recent", action: nil, keyEquivalent: "")
+        recentMenu = NSMenu(title: "Open Recent"); recentItem.submenu = recentMenu; fileMenu.addItem(recentItem)
+        fileMenu.addItem(NSMenuItem.separator())
+        fileMenu.addItem(withTitle: "Save", action: #selector(saveProject), keyEquivalent: "s")
+        fileMenu.addItem(withTitle: "Save As", action: #selector(saveProjectAs), keyEquivalent: "S")
+        fileMenu.addItem(NSMenuItem.separator())
+        fileMenu.addItem(withTitle: "Export Current Frame", action: #selector(exportFrame), keyEquivalent: "")
+        fileMenu.addItem(withTitle: "Export Animation Sheet", action: #selector(exportSheet), keyEquivalent: "")
+        fileMenu.addItem(withTitle: "Export Palette", action: #selector(exportPalette), keyEquivalent: "")
         fileItem.submenu = fileMenu
+        rebuildRecentMenu()
+        let editItem = NSMenuItem(); main.addItem(editItem)
+        let editMenu = NSMenu(title: "Edit")
+        editMenu.addItem(NSMenuItem(title: "Undo", action: Selector(("undo:")), keyEquivalent: "z"))
+        editMenu.addItem(NSMenuItem(title: "Redo", action: Selector(("redo:")), keyEquivalent: "Z"))
+        editMenu.addItem(NSMenuItem.separator())
+        editMenu.addItem(NSMenuItem(title: "Cut", action: #selector(NSText.cut(_:)), keyEquivalent: "x"))
+        editMenu.addItem(NSMenuItem(title: "Copy", action: #selector(NSText.copy(_:)), keyEquivalent: "c"))
+        editMenu.addItem(NSMenuItem(title: "Paste", action: #selector(NSText.paste(_:)), keyEquivalent: "v"))
+        editMenu.addItem(NSMenuItem(title: "Select All", action: #selector(NSText.selectAll(_:)), keyEquivalent: "a"))
+        editItem.submenu = editMenu
         NSApp.mainMenu = main
     }
 
-    @objc private func openProject() { chooseFiles(inputId: "project-file", accept: ".pixr,.json,.pixelworkshop,application/json", multiple: true) }
+    @objc private func openFiles() { chooseFiles(inputId: "open-files-input", accept: ".png,image/png,.pixr,.json,.pixelworkshop,application/json", multiple: true) }
     @objc private func saveProject() {
         webView.evaluateJavaScript("document.getElementById('save-project').click()")
     }
+    @objc private func saveProjectAs() { webView.evaluateJavaScript("document.getElementById('save-as').click()") }
+    @objc private func exportFrame() { webView.evaluateJavaScript("document.getElementById('export-png').click()") }
+    @objc private func exportSheet() { webView.evaluateJavaScript("document.getElementById('export-sheet').click()") }
+    @objc private func exportPalette() { webView.evaluateJavaScript("document.getElementById('export-palette').click()") }
     @objc private func newDocument() { webView.evaluateJavaScript("document.getElementById('new').click()") }
-    @objc private func closeDocument() { webView.evaluateJavaScript("document.dispatchEvent(new KeyboardEvent('keydown', {key:'w', metaKey:true, bubbles:true}))") }
+    @objc private func openRecent(_ sender: NSMenuItem) {
+        guard let path = sender.representedObject as? String else { return }
+        openURLs([URL(fileURLWithPath: path)])
+    }
+
+    private func rebuildRecentMenu() {
+        guard let recentMenu else { return }
+        recentMenu.removeAllItems()
+        let paths = UserDefaults.standard.stringArray(forKey: recentKey) ?? []
+        if paths.isEmpty { recentMenu.addItem(NSMenuItem(title: "No Recent Items", action: nil, keyEquivalent: "")); return }
+        for path in paths {
+            let item = NSMenuItem(title: URL(fileURLWithPath: path).lastPathComponent, action: #selector(openRecent(_:)), keyEquivalent: "")
+            item.representedObject = path; item.target = self; recentMenu.addItem(item)
+        }
+        recentMenu.addItem(NSMenuItem.separator())
+        let clearItem = NSMenuItem(title: "Clear Menu", action: #selector(clearRecent), keyEquivalent: "")
+        clearItem.target = self; recentMenu.addItem(clearItem)
+    }
+
+    @objc private func clearRecent() { UserDefaults.standard.removeObject(forKey: recentKey); rebuildRecentMenu() }
+
+    private func rememberRecent(_ urls: [URL]) {
+        var paths = UserDefaults.standard.stringArray(forKey: recentKey) ?? []
+        for url in urls { paths.removeAll { $0 == url.path }; paths.insert(url.path, at: 0) }
+        UserDefaults.standard.set(Array(paths.prefix(10)), forKey: recentKey); rebuildRecentMenu()
+    }
 
     func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {
         guard let body = message.body as? [String: Any], let type = body["type"] as? String else { return }
@@ -95,7 +144,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKScriptMessageHandler
         case "open-files":
             chooseFiles(inputId: body["inputId"] as? String ?? "", accept: body["accept"] as? String ?? "", multiple: body["multiple"] as? Bool ?? false)
         case "save-file":
-            saveFile(requestId: body["requestId"] as? String ?? "", filename: body["filename"] as? String ?? "Pixr-export", base64: body["base64"] as? String ?? "")
+            saveFile(requestId: body["requestId"] as? String ?? "", filename: body["filename"] as? String ?? "Pixr-export", directory: body["directory"] as? String ?? "", savePath: body["savePath"] as? String ?? "", saveAs: body["saveAs"] as? Bool ?? false, base64: body["base64"] as? String ?? "")
         default: break
         }
     }
@@ -110,31 +159,61 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKScriptMessageHandler
         if !extensions.isEmpty { panel.allowedContentTypes = extensions.compactMap { UTType(filenameExtension: $0) } }
         panel.begin { [weak self] response in
             guard response == .OK, let self else { return }
-            let items = panel.urls.compactMap { url -> [String: String]? in
-                guard let data = try? Data(contentsOf: url) else { return nil }
-                return ["name": url.lastPathComponent, "base64": data.base64EncodedString(), "type": UTType(filenameExtension: url.pathExtension)?.preferredMIMEType ?? "application/octet-stream"]
-            }
-            guard let encoded = try? JSONSerialization.data(withJSONObject: items),
-                  let json = String(data: encoded, encoding: .utf8),
-                  let arg = Self.javascriptString(json), let target = Self.javascriptString(inputId) else { return }
-            self.webView.evaluateJavaScript("window.PixrNative.acceptFiles(\(target), JSON.parse(\(arg)))")
+            self.rememberRecent(panel.urls)
+            self.openURLs(panel.urls, inputId: inputId)
         }
     }
 
-    private func saveFile(requestId: String, filename: String, base64: String) {
+    private func openURLs(_ urls: [URL], inputId: String = "open-files-input") {
+        let items = urls.compactMap { url -> [String: String]? in
+                guard let data = try? Data(contentsOf: url) else { return nil }
+                return ["name": url.lastPathComponent, "sourcePath": url.path, "base64": data.base64EncodedString(), "type": UTType(filenameExtension: url.pathExtension)?.preferredMIMEType ?? "application/octet-stream"]
+        }
+        guard let encoded = try? JSONSerialization.data(withJSONObject: items),
+              let json = String(data: encoded, encoding: .utf8),
+              let arg = Self.javascriptString(json), let target = Self.javascriptString(inputId) else { return }
+        webView.evaluateJavaScript("window.PixrNative.acceptFiles(\(target), JSON.parse(\(arg)))")
+    }
+
+    private func saveFile(requestId: String, filename: String, directory: String, savePath: String, saveAs: Bool, base64: String) {
         guard let data = Data(base64Encoded: base64) else { completeSave(requestId, ok: false); return }
-        let panel = NSSavePanel(); panel.nameFieldStringValue = filename; panel.canCreateDirectories = true
+        if !saveAs, !savePath.isEmpty {
+            let destination = URL(fileURLWithPath: savePath)
+            do { try data.write(to: destination, options: .atomic); completeSave(requestId, ok: true, path: destination.path) }
+            catch { NSSound.beep(); completeSave(requestId, ok: false) }
+            return
+        }
+        let panel = NSSavePanel(); panel.canCreateDirectories = true
+        let sourceDirectory = directory.isEmpty ? nil : URL(fileURLWithPath: directory, isDirectory: true)
+        if let sourceDirectory { panel.directoryURL = sourceDirectory }
+        panel.isExtensionHidden = false
         if let type = UTType(filenameExtension: URL(fileURLWithPath: filename).pathExtension) { panel.allowedContentTypes = [type] }
+        let suggestedName = sourceDirectory.map { nextAvailableName(filename, in: $0) } ?? filename
+        panel.nameFieldStringValue = URL(fileURLWithPath: suggestedName).deletingPathExtension().lastPathComponent
         panel.begin { [weak self] response in
             guard response == .OK, let url = panel.url else { self?.completeSave(requestId, ok: false); return }
-            do { try data.write(to: url, options: .atomic); self?.completeSave(requestId, ok: true) }
+            do { try data.write(to: url, options: .atomic); self?.completeSave(requestId, ok: true, path: url.path) }
             catch { NSSound.beep(); self?.completeSave(requestId, ok: false) }
         }
     }
 
-    private func completeSave(_ requestId: String, ok: Bool) {
-        guard let id = Self.javascriptString(requestId) else { return }
-        webView.evaluateJavaScript("window.PixrNative.completeSave(\(id), \(ok ? "true" : "false"))")
+    private func nextAvailableName(_ filename: String, in directory: URL) -> String {
+        let original = directory.appendingPathComponent(filename)
+        guard FileManager.default.fileExists(atPath: original.path) else { return filename }
+        let source = URL(fileURLWithPath: filename)
+        let stem = source.deletingPathExtension().lastPathComponent
+        let ext = source.pathExtension
+        var index = 2
+        while true {
+            let candidate = ext.isEmpty ? "\(stem) \(index)" : "\(stem) \(index).\(ext)"
+            if !FileManager.default.fileExists(atPath: directory.appendingPathComponent(candidate).path) { return candidate }
+            index += 1
+        }
+    }
+
+    private func completeSave(_ requestId: String, ok: Bool, path: String = "") {
+        guard let id = Self.javascriptString(requestId), let encodedPath = Self.javascriptString(path) else { return }
+        webView.evaluateJavaScript("window.PixrNative.completeSave(\(id), \(ok ? "true" : "false"), \(encodedPath))")
     }
 
     private static func javascriptString(_ value: String) -> String? {

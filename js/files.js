@@ -84,12 +84,12 @@
       C.dimensions(width, height, images.length);
       const next = C.createProject(width, height, (images[0].name || 'Imported PNG').replace(/\.png$/i, ''));
       next.settings = { ...p.settings }; next.customPalettes = p.customPalettes.map(p => ({ ...p, colors: [...p.colors] }));
-      next.frames = images.map((img, i) => ({ name: img.name || `Frame ${i + 1}`, cels: [img.data.slice()] }));
+      next.frames = images.map((img, i) => ({ name: img.name || `Frame ${i + 1}`, sourceName: img.sourceName || img.name || null, sourcePath: img.sourcePath || null, cels: [img.data.slice()] }));
       return next;
     }
     if (p.width !== width || p.height !== height) throw new Error(`PNG frames must match this canvas (${p.width} × ${p.height}). Use Open PNG to start a differently sized document.`);
     C.editable(p); C.dimensions(width, height, p.frames.length + images.length, p.layers.length);
-    const frames = images.map((img, i) => ({ name: img.name || `Frame ${i + 1}`, cels: p.layers.map((_, li) => li === p.activeLayer ? img.data.slice() : C.blank(width, height)) }));
+    const frames = images.map((img, i) => ({ name: img.name || `Frame ${i + 1}`, sourceName: img.sourceName || img.name || null, sourcePath: img.sourcePath || null, cels: p.layers.map((_, li) => li === p.activeLayer ? img.data.slice() : C.blank(width, height)) }));
     p.frames.splice(p.activeFrame + 1, 0, ...frames); p.activeFrame++;
     return p;
   }
@@ -101,7 +101,7 @@
     });
     return { width, height, data };
   }
-  async function download(content, filename, type) {
+  async function download(content, filename, type, options = {}) {
     const bridge = typeof window !== 'undefined' && window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.pixrNative;
     if (bridge) {
       const bytes = typeof content === 'string' ? new TextEncoder().encode(content) : new Uint8Array(content);
@@ -111,8 +111,8 @@
         root.PixrNative = root.PixrNative || {};
         root.PixrNative.pendingSaves = root.PixrNative.pendingSaves || {};
         root.PixrNative.pendingSaves[requestId] = resolve;
-        root.PixrNative.completeSave = (id, ok) => { const done = root.PixrNative.pendingSaves[id]; if (!done) return; delete root.PixrNative.pendingSaves[id]; done(!!ok); };
-        bridge.postMessage({ type: 'save-file', requestId, filename, mime: type, base64: btoa(binary) });
+        root.PixrNative.completeSave = (id, ok, path = '') => { const done = root.PixrNative.pendingSaves[id]; if (!done) return; delete root.PixrNative.pendingSaves[id]; done({ ok: !!ok, path }); };
+        bridge.postMessage({ type: 'save-file', requestId, filename, directory: options.directory || '', savePath: options.savePath || '', saveAs: !!options.saveAs, mime: type, base64: btoa(binary) });
       });
     }
     const url = URL.createObjectURL(new Blob([content], { type })), a = document.createElement('a');
