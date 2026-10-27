@@ -12,7 +12,7 @@
   const throws = (fn, pattern) => { let error; try { fn(); } catch (e) { error = e; } ok(error && (!pattern || pattern.test(error.message)), 'Expected a clear validation error.'); };
   const red = [255, 0, 0, 255], blue = [0, 0, 255, 255], clear = [0, 0, 0, 0];
   const pixel = (p, x, y, frame = p.activeFrame, layer = p.activeLayer) => C.getPixel(p.frames[frame].cels[layer], p.width, x, y);
-  const paint = (p, x, y, color = red, size = 1, mirror = false) => C.stamp(C.editable(p), p.width, p.height, x, y, color, size, mirror);
+  const paint = (p, x, y, color = red, size = 1) => C.stamp(C.editable(p), p.width, p.height, x, y, color, size);
   const count = data => Array.from(data).filter((_, i) => i % 4 === 3).filter(Boolean).length;
   test('Rectangular, single-pixel and maximum canvas dimensions', () => {
     for (const [w, h] of [[1, 1], [1, 256], [47, 19], [256, 256]]) {
@@ -60,11 +60,8 @@
     C.fill(p, 0, 0, blue); eq(count(C.composite(p)), 9);
     C.fill(p, 4, 2, [255, 0, 0, 64]); eq(pixel(p, 4, 0), [255, 0, 0, 64]);
   });
-  test('Mirror X reflects the exact brush footprint, including even brushes', () => {
-    const p = C.createProject(12, 7); paint(p, 2, 2, red, 2, true);
-    for (const x of [2, 3, 8, 9]) for (const y of [2, 3]) eq(pixel(p, x, y), red);
-    eq(count(C.composite(p)), 8); C.flip(p); eq(count(C.composite(p)), 8);
-    const q = C.createProject(7, 3); paint(q, 0, 1); C.flip(q); eq(pixel(q, 6, 1), red); eq(pixel(q, 0, 1), clear);
+  test('Flip cell reflects artwork without changing canvas dimensions', () => {
+    const p = C.createProject(7, 3); paint(p, 0, 1); C.flip(p); eq(pixel(p, 6, 1), red); eq(pixel(p, 0, 1), clear);
   });
   test('Undo/redo stores whole strokes; new edits clear redo', () => {
     let p = C.createProject(8, 3); const h = new C.History(), before = C.clone(p);
@@ -222,6 +219,12 @@
     const text = F.serialize(p), result = F.deserialize(text); eq(F.serialize(result), text);
     eq(F.PROJECT_EXTENSION, '.pixr'); eq(JSON.parse(text).format, 'pixel-workshop');
     eq(pixel(result,12,4,0,0), [7,9,201,1]);
+  });
+  test('Legacy Mirror X settings are ignored when loading version 1 projects', () => {
+    const p = C.createProject(2, 2), raw = JSON.parse(F.serialize(p));
+    raw.settings.mirror = true;
+    const loaded = F.deserialize(JSON.stringify(raw));
+    eq(loaded.settings.mirror, undefined); eq(loaded.settings.brush, 1);
   });
   test('Invalid and future projects are rejected without modifying the current model', () => {
     const p = C.createProject(2, 3); paint(p, 0, 0); const original = F.serialize(p);

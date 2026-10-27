@@ -5,6 +5,17 @@ under the Pixr repository root. Game runtime code, production assets and Godot
 tests were not modified. Existing unrelated working-tree changes were retained.
 No commit or push was made.
 
+## 2026-10-27 interface/menu milestone
+
+- `node tests/run.js`: **64/64 core tests and 10/10 interface source checks passed**, including compact rail and keyboard focus checks.
+- `./macos/build-app.sh`: **built Pixr.app**. `iconutil` rejected the generated
+  iconset, so the build script retained the existing ICNS file.
+- Browser visual/file:// interaction: **not verified in this session**; no browser
+  surface was available to the UI automation tool.
+- Native menu interaction: **not verified in this session**; UI automation access
+  to Pixr was rejected. Swift menu and bridge source checks passed, and the native
+  app compiled.
+
 ## Automated results
 
 | Environment | Result | Scope |
@@ -17,7 +28,7 @@ No commit or push was made.
 
 The suite covers rectangular dimensions, painting/erasing, all eight square
 brush sizes, even-size anchoring, gap-free lines, all eight Shift-constrained
-brush sizes, Shift-click versus Shift-drag, fill, mirror/flip, undo/redo, all
+brush sizes, Shift-click versus Shift-drag, fill, flip, undo/redo, all
 nine resize anchors, crop detection, odd centre offsets, frame isolation, shared
 layers, locks, visibility, source-over merging, composited palette extraction,
 colour selection versus usage, hardware indices/SAM encoding, custom palette
@@ -81,16 +92,17 @@ pointer, keyboard, picker and download behaviour.
   to about 800 × 600; collapse/reopen the timeline and scroll palette sections.
   Verify preview playback stays visible.
 - [ ] Draw slowly and quickly at 1×, intermediate and 48× zoom. Check corner
-  clipping, brushes 1–8, erasing, mirror footprints and cursor outlines. Drag
+  clipping, brushes 1–8, erasing and cursor outlines. Drag
   outside the canvas and release; the next stroke must work normally.
 - [ ] Hold Shift before dragging horizontally and vertically, with small hand
   jitter and every brush size. Ensure no neighbouring pixels are altered beyond
   the brush's documented footprint. Shift-click from a previous endpoint; then
   Shift-drag elsewhere and confirm it does not draw a connecting diagonal first.
   Toggle Shift during a stroke and try undo/redo after each completed stroke.
-- [ ] Exercise B/E/F/I, M/G/H, Space, arrows, brackets, +/-/0 and Cmd/Ctrl S/O/Z,
-  Shift Z and Ctrl Y. Check that shortcuts do not interfere with text/number
-  fields, selects, native colour pickers or dialogs. Test the local keyboard
+- [ ] Exercise B/E/F/I, G/H, Space, arrows, brackets, +/-/0 and Cmd/Ctrl S/O/Z,
+  Shift Z and Ctrl Y. Check brush input clamping below 1, above 8 and for
+  fractional values. Confirm shortcuts do not interfere with text/number fields,
+  selects, native colour pickers or dialogs. Test the local keyboard
   layout's bracket keys, including Alt combinations where relevant.
 - [ ] Sample an opaque, translucent and transparent pixel. Enter short and full
   hex values, change opacity and use the native colour picker. Verify selecting

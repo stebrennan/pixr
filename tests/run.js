@@ -5,4 +5,5 @@ require('./suite.js').run(result => {
   const failed = results.filter(r => !r.pass).length;
   console.log(`${results.length - failed}/${results.length} Pixr tests passed.`);
   process.exitCode = failed ? 1 : 0;
+  require('./interface.js');
 });

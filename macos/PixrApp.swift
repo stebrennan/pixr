@@ -7,6 +7,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKScriptMessageHandler
     private var window: NSWindow!
     private var webView: WKWebView!
     private var recentMenu: NSMenu!
+    private var undoItem: NSMenuItem!
+    private var redoItem: NSMenuItem!
+    private var canPixrUndo = false
+    private var canPixrRedo = false
+    private var editingTextField = false
     private let recentKey = "PixrRecentFiles"
 
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -91,15 +96,49 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKScriptMessageHandler
         rebuildRecentMenu()
         let editItem = NSMenuItem(); main.addItem(editItem)
         let editMenu = NSMenu(title: "Edit")
-        editMenu.addItem(NSMenuItem(title: "Undo", action: Selector(("undo:")), keyEquivalent: "z"))
-        editMenu.addItem(NSMenuItem(title: "Redo", action: Selector(("redo:")), keyEquivalent: "Z"))
+        undoItem = NSMenuItem(title: "Undo", action: #selector(undoEditing), keyEquivalent: "z")
+        undoItem.target = self
+        editMenu.addItem(undoItem)
+        redoItem = NSMenuItem(title: "Redo", action: #selector(redoEditing), keyEquivalent: "Z")
+        redoItem.target = self
+        editMenu.addItem(redoItem)
         editMenu.addItem(NSMenuItem.separator())
         editMenu.addItem(NSMenuItem(title: "Cut", action: #selector(NSText.cut(_:)), keyEquivalent: "x"))
         editMenu.addItem(NSMenuItem(title: "Copy", action: #selector(NSText.copy(_:)), keyEquivalent: "c"))
         editMenu.addItem(NSMenuItem(title: "Paste", action: #selector(NSText.paste(_:)), keyEquivalent: "v"))
         editMenu.addItem(NSMenuItem(title: "Select All", action: #selector(NSText.selectAll(_:)), keyEquivalent: "a"))
         editItem.submenu = editMenu
+        let imageItem = NSMenuItem(); main.addItem(imageItem)
+        let imageMenu = NSMenu(title: "Image")
+        let flipItem = NSMenuItem(title: "Flip Cell", action: #selector(flipCell), keyEquivalent: "")
+        flipItem.target = self; imageMenu.addItem(flipItem)
+        let resizeItem = NSMenuItem(title: "Resize Canvas…", action: #selector(resizeCanvas), keyEquivalent: "")
+        resizeItem.target = self; imageMenu.addItem(resizeItem)
+        imageItem.submenu = imageMenu
         NSApp.mainMenu = main
+    }
+
+    @objc private func undoEditing() { performEditCommand("undo") }
+    @objc private func redoEditing() { performEditCommand("redo") }
+    @objc private func flipCell() { runEditorCommand("flip") }
+    @objc private func resizeCanvas() { runEditorCommand("resize") }
+
+    private func performEditCommand(_ command: String) {
+        let script = "document.activeElement && /^(INPUT|TEXTAREA|SELECT)$/.test(document.activeElement.tagName)"
+        webView.evaluateJavaScript(script) { [weak self] result, _ in
+            guard let self else { return }
+            if (result as? Bool) == true {
+                if command == "undo", self.webView.undoManager?.canUndo == true { self.webView.undoManager?.undo() }
+                else if command == "redo", self.webView.undoManager?.canRedo == true { self.webView.undoManager?.redo() }
+                return
+            }
+            self.runEditorCommand(command)
+        }
+    }
+
+    private func runEditorCommand(_ command: String) {
+        guard let value = Self.javascriptString(command) else { return }
+        webView.evaluateJavaScript("window.PixrNative.command(\(value))")
     }
 
     @objc private func openFiles() { chooseFiles(inputId: "open-files-input", accept: ".png,image/png,.pixr,.json,.pixelworkshop,application/json", multiple: true) }
@@ -141,6 +180,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKScriptMessageHandler
     func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {
         guard let body = message.body as? [String: Any], let type = body["type"] as? String else { return }
         switch type {
+        case "history-state":
+            canPixrUndo = body["undo"] as? Bool ?? false
+            canPixrRedo = body["redo"] as? Bool ?? false
+            undoItem?.isEnabled = canPixrUndo || (editingTextField && webView.undoManager?.canUndo == true)
+            redoItem?.isEnabled = canPixrRedo || (editingTextField && webView.undoManager?.canRedo == true)
+        case "editing-focus":
+            editingTextField = body["textField"] as? Bool ?? false
+            undoItem?.isEnabled = canPixrUndo || (editingTextField && webView.undoManager?.canUndo == true)
+            redoItem?.isEnabled = canPixrRedo || (editingTextField && webView.undoManager?.canRedo == true)
         case "open-files":
             chooseFiles(inputId: body["inputId"] as? String ?? "", accept: body["accept"] as? String ?? "", multiple: body["multiple"] as? Bool ?? false)
         case "save-file":

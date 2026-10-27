@@ -43,10 +43,11 @@ uses Swift, AppKit, WebKit, `iconutil` and `codesign` from macOS developer tools
 - **Pencil / Eraser:** square brushes from 1–8 pixels, interpolated during fast
   strokes. One completed stroke is one undo operation. Pencil writes the chosen
   RGBA value directly, so repeated strokes do not accumulate opacity.
+- **Right-click:** temporarily erases with the Pencil or draws with the Eraser.
 - **Brush anchoring:** the pointer names one pixel. The square starts at
   `pointer − floor((size − 1) / 2)` on both axes. Odd sizes are centred; even sizes
   extend right and down. A 2 px brush at `(x, y)` covers `x…x+1, y…y+1`. Cursor
-  outlines show the clipped brush and its mirrored footprint.
+  outlines show the clipped brush footprint.
 - **Shift + drag:** the first pixel movement chooses horizontal or vertical,
   with ties horizontal. That axis stays fixed until Shift is released. Holding
   Shift before starting a drag constrains from that stroke's starting point.
@@ -55,9 +56,8 @@ uses Swift, AppKit, WebKit, `iconutil` and `codesign` from macOS developer tools
   commands reset that endpoint. A Shift-click is deferred until release to avoid
   painting an unwanted connecting line at the beginning of a constrained drag.
 - **Flood fill:** four-connected, exact RGBA matching on the active cel;
-  independent of brush size. Mirror X also fills from the mirrored starting point.
+  independent of brush size.
 - **Eyedropper / Alt + click:** samples visible composited RGBA, including alpha.
-- **Mirror X:** reflects affected pixels across the canvas's vertical centre.
 - **Flip cel:** horizontally flips only the active layer in the selected frame.
 - **Zoom / Fit:** integer nearest-neighbour display zoom from 1× to 48×. Large
   canvases scroll; Fit selects the largest fitting integer zoom, with a 1× minimum.
@@ -213,15 +213,20 @@ Names are preserved; unnamed lists use the filename. Each custom palette needs
 1–4096 colours; the library supports up to 128 custom palettes. Select a custom
 palette to delete or export it. Deletion does not alter artwork and is undoable.
 
+## Interface and menus
+
+The left toolbar uses four icon-only tools with accessible names and tooltips. Brush size is a numeric 1–8 control in the editing bar. Browser users find Flip Cell and Resize Canvas after Export in the top toolbar. The macOS app keeps file actions in the native File menu and provides Flip Cell and Resize Canvas… in the native Image menu. Undo and redo use Cmd/Ctrl+Z and Cmd/Ctrl+Shift+Z; the macOS Edit menu sends those commands to the active Pixr document while preserving text-field editing.
+
 ## Keyboard shortcuts
 
 | Shortcut | Action |
 | --- | --- |
 | B / E / F / I | Pencil / eraser / fill / eyedropper |
+| Right-click | Erase with Pencil / draw with Eraser |
 | Alt + click | Sample the visible pixel |
 | [ / ] | Decrease / increase brush size |
 | Shift + drag / Shift + click | Constrain axis / connect a line |
-| M / G / H | Mirror X / grid / flip active cel |
+| G / H | Grid / flip active cel horizontally |
 | Space | Play / pause preview |
 | + / − / 0 | Zoom in / out / fit |
 | Left / Right arrow | Select previous / next frame |

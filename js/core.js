@@ -3,7 +3,7 @@
   'use strict';
   const MAX_PIXELS = 8 * 1024 * 1024;
   const defaults = () => ({
-    color: '#ffcf70ff', tool: 'pencil', brush: 1, mirror: false, grid: true,
+    color: '#ffcf70ff', tool: 'pencil', brush: 1, grid: true,
     onion: false, zoom: 16, previewZoom: 4, background: '#383b45', checker: true,
     palette: 'zx', arrangement: 'hardware', timeline: true,
   });
@@ -55,13 +55,12 @@
     data.set(color, (y * w + x) * 4);
   }
   // Even brushes extend towards right/bottom: size 2 at (x,y) covers x..x+1, y..y+1.
-  function stamp(data, w, h, x, y, color, size = 1, mirror = false) {
+  function stamp(data, w, h, x, y, color, size = 1) {
     integer(size, 1, 8, 'Brush size');
     const offset = Math.floor((size - 1) / 2);
     for (let dy = 0; dy < size; dy++) for (let dx = 0; dx < size; dx++) {
       const px = x - offset + dx, py = y - offset + dy;
       setPixel(data, w, h, px, py, color);
-      if (mirror) setPixel(data, w, h, w - 1 - px, py, color);
     }
   }
   function linePoints(a, b) {
@@ -77,8 +76,8 @@
     }
     return out;
   }
-  function drawLine(data, w, h, a, b, color, size = 1, mirror = false) {
-    for (const point of linePoints(a, b)) stamp(data, w, h, point.x, point.y, color, size, mirror);
+  function drawLine(data, w, h, a, b, color, size = 1) {
+    for (const point of linePoints(a, b)) stamp(data, w, h, point.x, point.y, color, size);
   }
   // Axis is chosen once per constrained segment; small hand jitter cannot change it.
   function constrain(start, point, axis = null) {
@@ -91,15 +90,15 @@
   // Used by the pointer controller and tests. Shift-click is deferred until pointer-up,
   // so a Shift-drag can constrain from its own origin without drawing an unwanted line.
   class Stroke {
-    constructor(p, point, { color, size = 1, mirror = false, shift = false, previous = null } = {}) {
+    constructor(p, point, { color, size = 1, shift = false, previous = null } = {}) {
       this.data = editable(p); this.w = p.width; this.h = p.height;
-      this.color = color || parseColor(p.settings.color); this.size = size; this.mirror = mirror;
+      this.color = color || parseColor(p.settings.color); this.size = size;
       this.start = { ...point }; this.last = { ...point }; this.previous = previous;
       this.shiftClick = shift; this.moved = false; this.shift = shift; this.axis = null;
       this.constraintStart = { ...point };
       if (!shift) this.paint(point, point);
     }
-    paint(a, b) { drawLine(this.data, this.w, this.h, a, b, this.color, this.size, this.mirror); }
+    paint(a, b) { drawLine(this.data, this.w, this.h, a, b, this.color, this.size); }
     move(point, shift = this.shift) {
       if (point.x === this.start.x && point.y === this.start.y && !this.moved) return;
       this.moved = true;
@@ -129,9 +128,8 @@
       if (py) queue.push(pos - w); if (py + 1 < h) queue.push(pos + w);
     }
   }
-  function fill(p, x, y, color, mirror = false) {
+  function fill(p, x, y, color) {
     const data = editable(p); flood(data, p.width, p.height, x, y, color);
-    if (mirror) flood(data, p.width, p.height, p.width - 1 - x, y, color);
   }
   function flip(p) {
     const data = editable(p), source = data.slice();
@@ -269,7 +267,7 @@
   function validateSettings(raw = {}) {
     if (!raw || typeof raw !== 'object' || Array.isArray(raw)) throw new Error('Invalid editor settings.');
     const settings = defaults();
-    for (const key of ['mirror', 'grid', 'onion', 'checker', 'timeline']) {
+    for (const key of ['grid', 'onion', 'checker', 'timeline']) {
       if (raw[key] !== undefined && typeof raw[key] !== 'boolean') throw new Error(`Invalid ${key} setting.`);
       if (raw[key] !== undefined) settings[key] = raw[key];
     }

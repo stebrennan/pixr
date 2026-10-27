@@ -53,7 +53,7 @@ Optional `settings` fields (defaults in parentheses):
 | `color` | Hex RGBA (`#ffcf70ff`) |
 | `tool` | `pencil`, `eraser`, `fill`, `picker` (`pencil`) |
 | `brush` | Integer 1–8 (`1`) |
-| `mirror`, `grid`, `onion` | Booleans (`false`, `true`, `false`) |
+| `grid`, `onion` | Booleans (`true`, `false`) |
 | `zoom`, `previewZoom` | Integer 1–48 / 1–16 (`16` / `4`) |
 | `background`, `checker` | Hex backdrop / boolean (`#383b45` / `true`) |
 | `palette` | Built-in ID `zx`, `sam`, `cpc`, `bbc`, `c64`, or custom ID (`zx`) |
@@ -61,8 +61,8 @@ Optional `settings` fields (defaults in parentheses):
 | `timeline` | Boolean (`true`) |
 
 An unavailable selected palette falls back to ZX Spectrum in the UI. Unknown
-fields are ignored; known invalid values are rejected. Missing settings use
-defaults. Playback position, playing/paused state, pointer state, dirty flag and
+fields, including the legacy Mirror X preference, are ignored; known invalid
+values are rejected. Missing settings use defaults. Playback position, playing/paused state, pointer state, dirty flag and
 undo history are deliberately transient.
 
 The unversioned prototype compatibility bridge supports only hex colour arrays

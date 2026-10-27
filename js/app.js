@@ -11,6 +11,19 @@
     else input.click();
   }
   window.PixrNative = window.PixrNative || {};
+  window.PixrNative.command = action => {
+    if (action === 'undo') undo();
+    else if (action === 'redo') undo(true);
+    else if (action === 'flip') $('flip').click();
+    else if (action === 'resize') $('resize').click();
+  };
+  function reportNativeFocus() {
+    if (!nativeBridge()) return;
+    const active = document.activeElement;
+    nativeBridge().postMessage({ type: 'editing-focus', textField: !!active && (/^(INPUT|TEXTAREA|SELECT)$/.test(active.tagName) || active.isContentEditable) });
+  }
+  document.addEventListener('focusin', reportNativeFocus);
+  document.addEventListener('focusout', () => setTimeout(reportNativeFocus, 0));
   window.PixrNative.acceptFiles = (inputId, files) => {
     const input = $(inputId), transfer = new DataTransfer();
     for (const item of files) {
@@ -29,7 +42,6 @@
   let playing = true, previewFrame = 0, previewTime = 0, previewDirty = true;
   let requested = false, timelineDirty = true, bitmapLimit = 128;
   let resizeMode = false, anchor = 4, pngMode = 'open', pngTarget = null;
-  let storageAvailable = true;
   const status = message => { $('status').textContent = message; };
   function message(error, title = 'Could not complete that action') {
     $('message-title').textContent = title; $('message-text').textContent = error.message || String(error);
@@ -45,14 +57,12 @@
   function remember() {
     try {
       localStorage.setItem(storageKey, JSON.stringify({ settings: project.settings, customPalettes: project.customPalettes }));
-      storageAvailable = true;
-    } catch { storageAvailable = false; }
-    $('storage-status').textContent = storageAvailable ? 'Preferences saved locally. Save artwork as a project.' : 'Browser storage unavailable. Save a project to keep palettes and settings.';
+    } catch {}
   }
   try {
     const raw = JSON.parse(localStorage.getItem(storageKey) || 'null');
     if (raw) { project.settings = C.validateSettings(raw.settings); project.settings.onion = false; project.customPalettes = F.validateCustom(raw.customPalettes); }
-  } catch { storageAvailable = false; }
+  } catch {}
   function storeActive() { if (activeDocument) Object.assign(activeDocument, { project, history, dirty, scrollLeft: $('stage').scrollLeft, scrollTop: $('stage').scrollTop }); }
   function activate(doc) {
     finishStroke(); storeActive(); activeDocument = doc; project = doc.project; history = doc.history; dirty = doc.dirty;
@@ -126,9 +136,8 @@
   function syncControls() {
     const s = project.settings, color = C.parseColor(s.color);
     document.querySelectorAll('[data-tool]').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.tool === s.tool)));
-    for (const key of ['mirror', 'grid', 'onion', 'checker']) $(key).checked = s[key];
-    $('brush').value = s.brush; $('brush-number').value = s.brush;
-    $('brush-sample').style.width = `${s.brush * 3}px`; $('brush-sample').style.height = `${s.brush * 3}px`;
+    for (const key of ['grid', 'onion', 'checker']) $(key).checked = s[key];
+    $('brush-number').value = s.brush;
     $('background').value = s.background; $('color-picker').value = s.color.slice(0, 7); $('hex').value = s.color;
     $('alpha').value = color[3]; $('color-alpha').textContent = `${Math.round(color[3] / 255 * 100)}%`;
     $('selected-color').style.setProperty('--color', rgbaCSS(s.color));
@@ -136,7 +145,7 @@
     $('arrangement').value = s.arrangement; $('fps').value = project.fps;
     $('timeline').hidden = !s.timeline; $('timeline-toggle').setAttribute('aria-expanded', String(s.timeline));
     $('timeline-toggle').textContent = s.timeline ? 'Frames & Layers ▼' : 'Frames & Layers ▶';
-    $('undo').disabled = !history.undoStack.length; $('redo').disabled = !history.redoStack.length;
+    if (nativeBridge()) nativeBridge().postMessage({ type: 'history-state', undo: !!history.undoStack.length, redo: !!history.redoStack.length });
     $('delete-frame').disabled = project.frames.length === 1; $('delete-layer').disabled = project.layers.length === 1;
     $('merge-layer').disabled = project.activeLayer === 0;
     $('document-name').textContent = project.name; $('dimensions').textContent = `${project.width} × ${project.height}`;
@@ -268,7 +277,7 @@
   }
   function renderCursor() {
     const s = project.settings, pencil = ['pencil', 'eraser'].includes(s.tool), size = pencil ? s.brush : 1;
-    const a = $('brush-cursor'), b = $('mirror-cursor'); a.hidden = !hover; b.hidden = !hover || !s.mirror || !pencil;
+    const a = $('brush-cursor'); a.hidden = !hover;
     if (!hover) return;
     const offset = Math.floor((size - 1) / 2), x = hover.x - offset, y = hover.y - offset;
     const place = (el, left, top) => {
@@ -276,11 +285,12 @@
       el.style.left = `${x1 * s.zoom}px`; el.style.top = `${y1 * s.zoom}px`;
       el.style.width = `${(x2 - x1) * s.zoom}px`; el.style.height = `${(y2 - y1) * s.zoom}px`;
     };
-    place(a, x, y); place(b, project.width - x - size, y);
+    place(a, x, y);
   }
   const surface = $('surface');
   surface.addEventListener('pointerdown', guard(event => {
-    if (event.button !== 0 || stroke) return;
+    const drawingTool = ['pencil', 'eraser'].includes(project.settings.tool);
+    if ((event.button !== 0 && !(event.button === 2 && drawingTool)) || stroke) return;
     event.preventDefault(); $('stage').focus({ preventScroll: true });
     const point = pointAt(event), s = project.settings; hover = point;
     if (s.tool === 'picker' || event.altKey) {
@@ -288,12 +298,14 @@
       chooseColor(C.hexColor(color)); status(`Picked ${C.hexColor(color)} at ${point.x}, ${point.y}.`); return;
     }
     C.editable(project);
-    if (s.tool === 'fill') { mutate(() => C.fill(project, point.x, point.y, C.parseColor(s.color), s.mirror), 'Filled the connected area on this cel.'); return; }
+    if (s.tool === 'fill') { mutate(() => C.fill(project, point.x, point.y, C.parseColor(s.color)), 'Filled the connected area on this cel.'); return; }
+    const erase = (s.tool === 'eraser') !== (event.button === 2);
     beforeStroke = C.clone(project);
-    stroke = new C.Stroke(project, point, { color: s.tool === 'eraser' ? [0, 0, 0, 0] : C.parseColor(s.color),
-      size: s.brush, mirror: s.mirror, shift: event.shiftKey, previous: previousPoint });
+    stroke = new C.Stroke(project, point, { color: erase ? [0, 0, 0, 0] : C.parseColor(s.color),
+      size: s.brush, shift: event.shiftKey, previous: previousPoint });
     surface.setPointerCapture(event.pointerId); schedule();
   }));
+  surface.addEventListener('contextmenu', event => event.preventDefault());
   surface.addEventListener('pointermove', guard(event => {
     const point = pointAt(event);
     if (stroke) {
@@ -371,13 +383,12 @@
   on('help', () => $('help-dialog').showModal());
   document.querySelectorAll('[data-close]').forEach(b => b.addEventListener('click', () => $(b.dataset.close).close()));
   document.querySelectorAll('[data-tool]').forEach(b => b.addEventListener('click', () => { finishStroke(); setting('tool', b.dataset.tool); }));
-  on('brush', () => setting('brush', Number($('brush').value)), 'input');
   on('brush-number', () => {
     const field = $('brush-number'), value = Number(field.value);
     if (!field.value || !Number.isFinite(value)) { field.value = project.settings.brush; return; }
     setting('brush', Math.max(1, Math.min(8, Math.round(value))));
   }, 'change');
-  for (const id of ['mirror', 'grid', 'onion', 'checker']) on(id, () => setting(id, $(id).checked), 'change');
+  for (const id of ['grid', 'onion', 'checker']) on(id, () => setting(id, $(id).checked), 'change');
   on('background', () => setting('background', $('background').value), 'input');
   on('reset-backdrop', () => {
     project.settings.background = C.defaults().background;
@@ -393,7 +404,6 @@
   on('bitmap-more', () => { bitmapLimit += 128; renderBitmap(); });
   on('palette-select', () => { setting('palette', $('palette-select').value); renderLibrary(); }, 'change');
   on('arrangement', () => { setting('arrangement', $('arrangement').value); renderLibrary(); }, 'change');
-  on('undo', () => undo()); on('redo', () => undo(true));
   on('flip', () => mutate(() => C.flip(project), 'Flipped the selected layer in this frame.'));
   on('timeline-toggle', () => setting('timeline', !project.settings.timeline));
   for (let n = 1; n <= 48; n++) { const option = document.createElement('option'); option.value = n; option.textContent = `${n * 100}%`; $('zoom').append(option); }
@@ -605,6 +615,7 @@
   document.addEventListener('keydown', guard(event => {
     if (document.querySelector('dialog[open]') || /^(INPUT|TEXTAREA|SELECT)$/.test(event.target.tagName) || event.target.isContentEditable) return;
     const key = event.key.toLowerCase(), mod = event.metaKey || event.ctrlKey;
+    if (nativeBridge() && mod && ['z', 'y'].includes(key)) return;
     if (mod && ['z', 'y', 's', 'o'].includes(key)) {
       event.preventDefault();
       if (key === 'z' || key === 'y') undo(event.shiftKey || key === 'y');
@@ -615,9 +626,11 @@
     if (nativeBridge() && event.ctrlKey && key === 'tab' && documents.length > 1) { event.preventDefault(); const i = documents.indexOf(activeDocument), step = event.shiftKey ? -1 : 1; activate(documents[(i + documents.length + step) % documents.length]); return; }
     if (mod || event.altKey || stroke) return;
     const tools = { b: 'pencil', e: 'eraser', f: 'fill', i: 'picker' };
-    if (tools[key]) { event.preventDefault(); setting('tool', tools[key]); }
+    if (tools[key]) {
+      event.preventDefault(); setting('tool', tools[key]);
+      if (document.activeElement === $('stage')) $('stage').blur();
+    }
     else if (key === 'g') setting('grid', !project.settings.grid);
-    else if (key === 'm') setting('mirror', !project.settings.mirror);
     else if (key === 'h') mutate(() => C.flip(project), 'Flipped the current cel horizontally.');
     else if (key === '[' || key === ']') setting('brush', Math.max(1, Math.min(8, project.settings.brush + (key === ']' ? 1 : -1))));
     else if (key === ' ') { event.preventDefault(); togglePlay(); }

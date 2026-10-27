@@ -218,6 +218,8 @@ button:focus-visible,input:focus-visible,select:focus-visible,summary:focus-visi
   padding-left:12px
 }
 
+.filebar .image-actions { border-left:1px solid var(--edge); padding-left:12px }
+
 .native-app .filebar { display:none }
 
 .export-menu {
@@ -265,7 +267,7 @@ button:focus-visible,input:focus-visible,select:focus-visible,summary:focus-visi
 
 main {
   display:grid;
-  grid-template-columns:132px minmax(0,1fr) 284px;
+  grid-template-columns:56px minmax(0,1fr) 284px;
   grid-template-rows:minmax(150px,1fr) auto;
   flex:1;
   min-height:0
@@ -279,36 +281,35 @@ main {
   grid-column:1;
   grid-row:1/3;
   border-right:1px solid var(--edge);
-  padding:18px 10px 12px;
+  padding:12px 8px;
   display:flex;
   flex-direction:column;
-  overflow:auto;
-  gap:12px
-}
-
-.tools h2 {
-  padding-left:4px
+  align-items:center;
+  overflow-x:hidden;
+  overflow-y:auto
 }
 
 .tool-list {
   display:flex;
   flex-direction:column;
-  gap:5px
+  gap:7px
 }
 
 .tool-list button {
   display:flex;
   align-items:center;
-  text-align:left;
-  gap:8px;
-  min-height:37px;
+  justify-content:center;
+  width:38px;
+  height:38px;
+  padding:4px;
+  font-size:20px;
   background:transparent;
   border-color:transparent
 }
 
 .tool-list button>span {
   font-size:20px;
-  width:18px;
+  width:22px;
   line-height:1
 }
 
@@ -318,74 +319,8 @@ main {
   color:#dacbfc
 }
 
-.tool-list kbd {
-  margin-left:auto;
-  color:#8f91a0;
-  font-size:9px
-}
-
-.brush-label {
-  font-size:8px;
-  letter-spacing:.8px;
-  display:flex;
-  justify-content:space-between
-}
-
-.brush-size-value {
-  display:flex;
-  align-items:center;
-  gap:4px;
-  color:var(--text);
-  letter-spacing:0
-}
-
-.brush-size-value input {
-  width:38px;
-  padding:2px 3px;
-  text-align:right;
-  font:inherit;
-  color:inherit
-}
-
-.brush-sample {
-  height:26px;
-  display:flex;
-  justify-content:center;
-  align-items:center
-}
-
-.brush-sample span {
-  background:var(--accent);
-  box-shadow:0 0 0 1px #ffffff22
-}
-
-.tool-options {
-  display:flex;
-  flex-direction:column;
-  gap:12px
-}
-
-.tool-options label {
-  padding-left:4px
-}
-
-.undo-row {
-  display:flex;
-  gap:4px;
-  flex-wrap:wrap
-}
-
-.undo-row button {
-  flex:1;
-  padding:5px
-}
-
-.tools hr {
-  border:0;
-  border-top:1px solid var(--edge);
-  width:100%;
-  margin:0
-}
+.brush-control { display:flex; align-items:center; gap:6px; white-space:nowrap }
+.brush-control input { width:42px; padding:6px; text-align:center; font:inherit }
 
 .tool-hint {
   font-size:10px;
@@ -538,16 +473,12 @@ canvas {
   background-size:16px 16px
 }
 
-#brush-cursor,#mirror-cursor {
+#brush-cursor {
   position:absolute;
   pointer-events:none;
   border:1px solid white;
   box-shadow:0 0 0 1px #000;
   z-index:2
-}
-
-#mirror-cursor {
-  border-style:dashed
 }
 
 .inspector {
@@ -1045,7 +976,7 @@ fieldset p {
 
 @media(max-width:1120px) {
   main {
-    grid-template-columns:115px minmax(0,1fr) 258px
+    grid-template-columns:56px minmax(0,1fr) 258px
   }
 
   .app-header {
@@ -1078,10 +1009,6 @@ fieldset p {
   .tool-list button {
     gap:6px;
     padding:5px
-  }
-
-  .tool-list kbd {
-    display:none
   }
 
   .workspace-bar {
@@ -1133,10 +1060,6 @@ fieldset p {
 
   .section-title {
     margin-bottom:8px
-  }
-
-  .storage-note {
-    font-size:8px
   }
 
   .palette-area {
