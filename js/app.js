@@ -595,7 +595,7 @@
     const pal = selectedPalette(); F.download(JSON.stringify({ name: pal.name, colors: pal.colors }, null, 2), `${safeName(pal.name)}.palette.json`, 'application/json');
     $('export-menu').open = false; status('Selected palette exported to JSON.');
   });
-  on('import-palette', () => $('palette-file').click());
+  on('import-palette', () => requestFiles($('palette-file')));
   $('palette-file').addEventListener('change', event => {
     const file = event.target.files[0]; event.target.value = ''; if (!file) return;
     void withBusy(async () => {
